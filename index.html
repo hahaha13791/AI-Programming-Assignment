@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Listen to the world</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+    <header class="app-header">
+      <h1>Listen to the world</h1>
+      <p class="subtitle">기준음을 듣고, 멜로디를 오선에 받아 적어 보세요.</p>
+    </header>
+
+    <section class="panel" aria-labelledby="difficulty-title">
+      <h2 id="difficulty-title">난이도</h2>
+      <div class="difficulty" role="radiogroup" aria-label="난이도 선택">
+        <button type="button" class="difficulty-option" role="radio" aria-checked="true" data-level="easy">
+          <span class="difficulty-name">쉬움</span>
+          <span class="difficulty-desc">3~4음</span>
+        </button>
+        <button type="button" class="difficulty-option" role="radio" aria-checked="false" data-level="medium">
+          <span class="difficulty-name">중간</span>
+          <span class="difficulty-desc">5~6음</span>
+        </button>
+        <button type="button" class="difficulty-option" role="radio" aria-checked="false" data-level="hard">
+          <span class="difficulty-name">어려움</span>
+          <span class="difficulty-desc">7~8음</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="playback-title">
+      <h2 id="playback-title">듣기</h2>
+      <div class="playback">
+        <button type="button" class="btn" id="btn-tonic">기준음(도) 듣기</button>
+        <button type="button" class="btn btn-primary" id="btn-melody">멜로디 듣기</button>
+        <button type="button" class="btn" id="btn-replay">다시 듣기</button>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="staff-title">
+      <h2 id="staff-title">받아 적기</h2>
+      <div class="staff-area" id="staff-area">
+        <p class="placeholder">오선지가 여기에 표시됩니다.</p>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="result-title">
+      <h2 id="result-title">결과</h2>
+      <div class="result-area" id="result-area">
+        <p class="placeholder">제출하면 채점 결과가 여기에 표시됩니다.</p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
