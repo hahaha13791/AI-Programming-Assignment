@@ -35,6 +35,7 @@
   }
 
   function drawStaff(svg) {
+    svg.append(svgEl('line', { x1: STAFF_LEFT, x2: WIDTH - STAFF_LEFT, y1: stepY(0), y2: stepY(0), class: 'staff-guide' }));
     for (let i = 0; i < 5; i++) {
       const y = BOTTOM_LINE_Y - i * LINE_GAP;
       svg.append(svgEl('line', { x1: STAFF_LEFT, x2: WIDTH - STAFF_LEFT, y1: y, y2: y, class: 'staff-line' }));
@@ -61,6 +62,7 @@
   function create({ container, preview, sharpButton, flatButton, undoButton, clearButton }) {
     const notes = [];
     let accidental = 0;
+    let hoverStep = null;
 
     const svg = svgEl('svg', {
       viewBox: `0 0 ${WIDTH} ${HEIGHT}`,
@@ -70,12 +72,25 @@
     });
     drawStaff(svg);
     const notesLayer = svgEl('g', {});
-    svg.append(notesLayer);
+    const ghostLayer = svgEl('g', { class: 'staff-ghost' });
+    svg.append(notesLayer, ghostLayer);
     container.replaceChildren(svg);
+
+    function stepAt(event) {
+      const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(svg.getScreenCTM().inverse());
+      return yToStep(point.y);
+    }
+
+    function renderGhost() {
+      ghostLayer.replaceChildren();
+      if (hoverStep === null || notes.length >= MAX_NOTES) return;
+      drawNote(ghostLayer, { step: hoverStep, accidental }, notes.length);
+    }
 
     function render() {
       notesLayer.replaceChildren();
       notes.forEach((note, i) => drawNote(notesLayer, note, i));
+      renderGhost();
 
       if (notes.length === 0) {
         const hint = document.createElement('p');
@@ -103,11 +118,20 @@
 
     svg.addEventListener('click', (event) => {
       if (notes.length >= MAX_NOTES) return;
-      const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(svg.getScreenCTM().inverse());
-      const step = yToStep(point.y);
+      const step = stepAt(event);
       if (step === null) return;
       notes.push({ step, accidental });
       render();
+    });
+
+    svg.addEventListener('pointermove', (event) => {
+      if (event.pointerType !== 'mouse') return;
+      hoverStep = stepAt(event);
+      renderGhost();
+    });
+    svg.addEventListener('pointerleave', () => {
+      hoverStep = null;
+      renderGhost();
     });
 
     sharpButton.addEventListener('click', () => setAccidental(1));

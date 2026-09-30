@@ -4,6 +4,7 @@
   --text: #2b2d31;
   --text-muted: #6b6f76;
   --border: #e2e0db;
+  --guide: #c4c1ba;
   --accent: #3d5a80;
   --accent-soft: #e6ecf3;
   --radius: 12px;
@@ -130,6 +131,16 @@ body {
 .staff-line {
   stroke: var(--text);
   stroke-width: 1.2;
+}
+
+.staff-guide {
+  stroke: var(--guide);
+  stroke-width: 1.2;
+}
+
+.staff-ghost {
+  opacity: 0.3;
+  pointer-events: none;
 }
 
 .staff-clef {
