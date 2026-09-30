@@ -42,8 +42,15 @@
 
     <section class="panel" aria-labelledby="staff-title">
       <h2 id="staff-title">받아 적기</h2>
-      <div class="staff-area" id="staff-area">
-        <p class="placeholder">오선지가 여기에 표시됩니다.</p>
+      <div class="staff-area" id="staff-area"></div>
+      <div class="note-preview" id="note-preview" aria-live="polite"></div>
+      <div class="staff-controls">
+        <div class="accidentals" role="group" aria-label="임시표">
+          <button type="button" class="btn-toggle" id="btn-sharp" aria-pressed="false" aria-label="샵(#)">♯&#xFE0E;</button>
+          <button type="button" class="btn-toggle" id="btn-flat" aria-pressed="false" aria-label="플랫(♭)">♭&#xFE0E;</button>
+        </div>
+        <button type="button" class="btn" id="btn-undo">마지막 음 지우기</button>
+        <button type="button" class="btn" id="btn-clear">전체 지우기</button>
       </div>
     </section>
 
@@ -54,5 +61,8 @@
       </div>
     </section>
   </main>
+
+  <script src="staff.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

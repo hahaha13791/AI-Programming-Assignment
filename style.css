@@ -115,12 +115,90 @@ body {
 }
 
 .staff-area {
-  min-height: 180px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px dashed var(--border);
+  border: 1px solid var(--border);
   border-radius: 8px;
+  padding: 8px 4px;
+}
+
+.staff {
+  display: block;
+  width: 100%;
+  height: auto;
+  cursor: pointer;
+}
+
+.staff-line {
+  stroke: var(--text);
+  stroke-width: 1.2;
+}
+
+.staff-clef {
+  font-family: "Segoe UI Symbol", "Noto Music", "Bravura", serif;
+  font-size: 92px;
+  fill: var(--text);
+}
+
+.staff-accidental {
+  font-family: "Segoe UI Symbol", "Noto Music", serif;
+  font-size: 18px;
+  text-anchor: end;
+  fill: var(--text);
+}
+
+.staff-note {
+  fill: var(--text);
+}
+
+.note-preview {
+  min-height: 40px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.note-chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.staff-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.accidentals {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-toggle {
+  width: 48px;
+  padding: 10px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: "Segoe UI Symbol", "Noto Music", serif;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.btn-toggle[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .result-area {
