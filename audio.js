@@ -14,7 +14,7 @@
 
   // Browsers only allow audio after a user gesture, so the context is created on the first click.
   function context() {
-    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (!ctx) ctx = new AudioContext();
     if (ctx.state === 'suspended') ctx.resume();
     return ctx;
   }
@@ -52,11 +52,16 @@
     });
   }
 
+  // null in `midis` is a rest. Returns the playback length in seconds.
   function play(midis) {
     const audio = context();
     stop();
-    const start = audio.currentTime + 0.05;
-    midis.forEach((midi, i) => scheduleNote(audio, midi, start + i * (NOTE_LENGTH + NOTE_GAP)));
+    const lead = 0.05;
+    const start = audio.currentTime + lead;
+    midis.forEach((midi, i) => {
+      if (midi !== null) scheduleNote(audio, midi, start + i * (NOTE_LENGTH + NOTE_GAP));
+    });
+    return lead + midis.length * (NOTE_LENGTH + NOTE_GAP) - NOTE_GAP;
   }
 
   window.Sound = { play, stop };

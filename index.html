@@ -35,13 +35,14 @@
       <h2 id="playback-title">듣기</h2>
       <div class="playback">
         <button type="button" class="btn" id="btn-tonic">기준음(도) 듣기</button>
-        <button type="button" class="btn btn-primary" id="btn-melody">멜로디 듣기</button>
+        <button type="button" class="btn btn-primary" id="btn-question">문제 듣기</button>
         <button type="button" class="btn" id="btn-replay">다시 듣기</button>
       </div>
     </section>
 
     <section class="panel" aria-labelledby="staff-title">
       <h2 id="staff-title">받아 적기</h2>
+      <p class="staff-hint" id="staff-hint">먼저 '문제 듣기'로 기준음과 멜로디를 끝까지 들어 보세요. 다 들으면 입력할 수 있어요.</p>
       <div class="staff-area" id="staff-area"></div>
       <div class="note-preview" id="note-preview" aria-live="polite"></div>
       <div class="staff-controls">
@@ -51,6 +52,7 @@
         </div>
         <button type="button" class="btn" id="btn-undo">마지막 음 지우기</button>
         <button type="button" class="btn" id="btn-clear">전체 지우기</button>
+        <button type="button" class="btn btn-primary" id="btn-submit">제출</button>
       </div>
     </section>
 
@@ -64,6 +66,7 @@
 
   <script src="staff.js"></script>
   <script src="audio.js"></script>
+  <script src="patterns.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

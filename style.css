@@ -5,6 +5,10 @@
   --text-muted: #6b6f76;
   --border: #e2e0db;
   --guide: #c4c1ba;
+  --correct: #2f7d5b;
+  --correct-soft: #e3f1ea;
+  --wrong: #b8463f;
+  --wrong-soft: #f7e4e2;
   --accent: #3d5a80;
   --accent-soft: #e6ecf3;
   --radius: 12px;
@@ -215,8 +219,83 @@ body {
 .result-area {
   min-height: 80px;
   display: flex;
-  align-items: center;
+  flex-direction: column;
   justify-content: center;
+  gap: 12px;
+}
+
+.score {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.answer-title {
+  margin: 4px 0 0;
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.answer-staff {
+  cursor: default;
+}
+
+.answer-staff .staff {
+  cursor: default;
+}
+
+.answer-chips {
+  margin-top: 0;
+}
+
+.result-area .btn {
+  flex: none;
+}
+
+.staff-hint {
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.staff.is-locked {
+  cursor: not-allowed;
+}
+
+.note.is-correct .staff-note,
+.note.is-correct .staff-accidental {
+  fill: var(--correct);
+}
+
+.note.is-wrong .staff-note,
+.note.is-wrong .staff-accidental {
+  fill: var(--wrong);
+}
+
+.note-slot {
+  width: 44px;
+  height: 32px;
+  border: 1.5px dashed var(--guide);
+  border-radius: 999px;
+}
+
+.note-chip.is-correct {
+  background: var(--correct-soft);
+  color: var(--correct);
+}
+
+.note-chip.is-correct::after {
+  content: " ✓";
+}
+
+.note-chip.is-wrong {
+  background: var(--wrong-soft);
+  color: var(--wrong);
+}
+
+.note-chip.is-wrong::after {
+  content: " ✗";
 }
 
 .placeholder {
