@@ -9,11 +9,19 @@
   // step: 0 = C4 ... 7 = C5. The bottom staff line is E4 (step 2).
   const BOTTOM_LINE_Y = 110;
   const STAFF_LEFT = 8;
-  const CLEF_WIDTH = 64;
-  const NOTE_SPACING = 50;
   const MAX_NOTES = 8;
-  const WIDTH = CLEF_WIDTH + NOTE_SPACING * MAX_NOTES + 16;
   const HEIGHT = 150;
+
+  // On narrow screens the notes sit closer together so the staff can be drawn taller,
+  // which makes each line/space a bigger touch target.
+  const compactQuery = window.matchMedia('(max-width: 480px)');
+
+  function layout() {
+    const compact = compactQuery.matches;
+    const clefWidth = compact ? 52 : 64;
+    const noteSpacing = compact ? 32 : 50;
+    return { clefWidth, noteSpacing, width: clefWidth + noteSpacing * MAX_NOTES + (compact ? 4 : 16) };
+  }
 
   function stepY(step) {
     return BOTTOM_LINE_Y - (step - 2) * HALF_GAP;
@@ -50,25 +58,32 @@
     return node;
   }
 
-  function buildStaff(label) {
-    const svg = svgEl('svg', { viewBox: `0 0 ${WIDTH} ${HEIGHT}`, class: 'staff', role: 'img', 'aria-label': label });
-    svg.append(svgEl('line', { x1: STAFF_LEFT, x2: WIDTH - STAFF_LEFT, y1: stepY(0), y2: stepY(0), class: 'staff-guide' }));
+  function drawBackground(svg, layer, geo) {
+    svg.setAttribute('viewBox', `0 0 ${geo.width} ${HEIGHT}`);
+    const right = geo.width - STAFF_LEFT;
+    layer.replaceChildren(svgEl('line', { x1: STAFF_LEFT, x2: right, y1: stepY(0), y2: stepY(0), class: 'staff-guide' }));
     for (let i = 0; i < 5; i++) {
       const y = BOTTOM_LINE_Y - i * LINE_GAP;
-      svg.append(svgEl('line', { x1: STAFF_LEFT, x2: WIDTH - STAFF_LEFT, y1: y, y2: y, class: 'staff-line' }));
+      layer.append(svgEl('line', { x1: STAFF_LEFT, x2: right, y1: y, y2: y, class: 'staff-line' }));
     }
-    svg.append(svgEl('text', { x: STAFF_LEFT + 2, y: BOTTOM_LINE_Y + 2, class: 'staff-clef' }, '\u{1D11E}'));
-    const notesLayer = svgEl('g', {});
-    svg.append(notesLayer);
-    return { svg, notesLayer };
+    layer.append(svgEl('text', { x: STAFF_LEFT + 2, y: BOTTOM_LINE_Y + 2, class: 'staff-clef' }, '\u{1D11E}'));
+  }
+
+  function buildStaff(label, geo) {
+    const svg = svgEl('svg', { class: 'staff', role: 'img', 'aria-label': label });
+    const background = svgEl('g', { class: 'staff-background' });
+    const notesLayer = svgEl('g', { class: 'staff-notes' });
+    svg.append(background, notesLayer);
+    drawBackground(svg, background, geo);
+    return { svg, background, notesLayer };
   }
 
   function markClass(mark) {
     return mark === true ? 'is-correct' : mark === false ? 'is-wrong' : '';
   }
 
-  function drawNote(layer, note, index, mark) {
-    const x = CLEF_WIDTH + NOTE_SPACING * (index + 0.5);
+  function drawNote(layer, geo, note, index, mark) {
+    const x = geo.clefWidth + geo.noteSpacing * (index + 0.5);
     const y = stepY(note.step);
     const group = svgEl('g', { class: `note ${markClass(mark)}` });
     if (note.step === 0) {
@@ -86,8 +101,9 @@
   }
 
   function draw(container, notes, label) {
-    const { svg, notesLayer } = buildStaff(label);
-    notes.forEach((note, i) => drawNote(notesLayer, note, i));
+    const geo = layout();
+    const { svg, notesLayer } = buildStaff(label, geo);
+    notes.forEach((note, i) => drawNote(notesLayer, geo, note, i));
     container.replaceChildren(svg);
   }
 
@@ -99,10 +115,17 @@
     let locked = false;
     let marks = null;
 
-    const { svg, notesLayer } = buildStaff('오선지. 줄이나 칸을 클릭해 음을 입력하세요.');
+    let geo = layout();
+    const { svg, background, notesLayer } = buildStaff('오선지. 줄이나 칸을 클릭해 음을 입력하세요.', geo);
     const ghostLayer = svgEl('g', { class: 'staff-ghost' });
     svg.append(ghostLayer);
     container.replaceChildren(svg);
+
+    compactQuery.addEventListener('change', () => {
+      geo = layout();
+      drawBackground(svg, background, geo);
+      render();
+    });
 
     function stepAt(event) {
       const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(svg.getScreenCTM().inverse());
@@ -112,7 +135,7 @@
     function renderGhost() {
       ghostLayer.replaceChildren();
       if (locked || hoverStep === null || notes.length >= capacity) return;
-      drawNote(ghostLayer, { step: hoverStep, accidental }, notes.length);
+      drawNote(ghostLayer, geo, { step: hoverStep, accidental }, notes.length);
     }
 
     function renderPreview() {
@@ -133,7 +156,7 @@
 
     function render() {
       notesLayer.replaceChildren();
-      notes.forEach((note, i) => drawNote(notesLayer, note, i, marks?.[i]));
+      notes.forEach((note, i) => drawNote(notesLayer, geo, note, i, marks?.[i]));
       renderGhost();
       renderPreview();
       svg.classList.toggle('is-locked', locked);
