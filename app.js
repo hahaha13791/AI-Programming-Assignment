@@ -1,6 +1,17 @@
 const TONIC = 60;
 const $ = (id) => document.getElementById(id);
 
+const HINTS = {
+  ready: "먼저 '문제 듣기'로 기준음과 멜로디를 끝까지 들어 보세요.",
+  listening: '듣는 중이에요. 재생이 끝나면 입력할 수 있어요.',
+  input: '들은 음을 오선에 순서대로 찍어 보세요. 다시 들어도 괜찮아요.',
+  submitted: "채점 완료! 아래에서 정답을 확인하고 '다음 문제'로 넘어가세요.",
+};
+
+function setHint(key) {
+  $('staff-hint').textContent = HINTS[key];
+}
+
 let level = 'easy';
 let current = null;
 let submitted = false;
@@ -34,7 +45,7 @@ function newQuestion() {
   staff.reset(current.length);
   staff.setLocked(true);
   $('btn-replay').disabled = true;
-  $('staff-hint').hidden = false;
+  setHint('ready');
   renderResult(null);
 }
 
@@ -87,11 +98,12 @@ $('btn-tonic').addEventListener('click', () => Sound.play([TONIC]));
 $('btn-question').addEventListener('click', () => {
   const seconds = Sound.play([TONIC, null, ...current.map(Staff.noteToMidi)]);
   if (!$('btn-replay').disabled) return;
+  setHint('listening');
   clearTimeout(unlockTimer);
   unlockTimer = setTimeout(() => {
     $('btn-replay').disabled = false;
-    $('staff-hint').hidden = true;
-    if (!submitted) staff.setLocked(false);
+    setHint('input');
+    staff.setLocked(false);
   }, seconds * 1000);
 });
 
@@ -101,6 +113,7 @@ $('btn-submit').addEventListener('click', () => {
   const input = staff.getNotes();
   const marks = current.map((note, i) => Staff.noteToMidi(note) === Staff.noteToMidi(input[i]));
   submitted = true;
+  setHint('submitted');
   staff.setLocked(true);
   staff.setMarks(marks);
   renderResult(marks);

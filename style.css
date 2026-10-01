@@ -33,6 +33,11 @@
   box-sizing: border-box;
 }
 
+/* Reserve the scrollbar space so the layout doesn't shift when the result makes the page scrollable. */
+html {
+  scrollbar-gutter: stable;
+}
+
 body {
   margin: 0;
   background: var(--bg);
@@ -99,8 +104,9 @@ button:focus-visible {
 .btn {
   flex: 1 1 140px;
   min-height: var(--control-height);
-  padding: 0 var(--space-4);
+  padding: 0 var(--space-3);
   border: 1px solid var(--border);
+  white-space: nowrap;
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--text);
@@ -201,6 +207,7 @@ button:focus-visible {
 
 .staff-hint {
   margin: 0 0 var(--space-3);
+  height: 1.5em;
   font-size: var(--fs-sm);
   color: var(--text-muted);
 }
@@ -374,5 +381,9 @@ button:focus-visible {
 
   .staff-area {
     padding: var(--space-1) 0;
+  }
+
+  .staff-hint {
+    height: 3em;
   }
 }
