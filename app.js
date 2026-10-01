@@ -6,10 +6,40 @@ const HINTS = {
   listening: '듣는 중이에요. 재생이 끝나면 입력할 수 있어요.',
   input: '들은 음을 오선에 순서대로 찍어 보세요. 다시 들어도 괜찮아요.',
   submitted: "채점 완료! 아래에서 정답을 확인하고 '다음 문제'로 넘어가세요.",
+  harmonyPending: '화성 모드는 준비 중이에요. 다음 업데이트에서 문제를 풀 수 있어요.',
 };
+
+const MODES = {
+  melody: {
+    subtitle: '기준음을 듣고, 멜로디를 오선에 받아 적어 보세요.',
+    levels: { easy: '3~4음', medium: '5~6음', hard: '7~8음' },
+    arpeggio: false,
+  },
+  harmony: {
+    subtitle: '기준음을 듣고, 화음을 오선에 받아 적어 보세요.',
+    levels: { easy: '장·단 3화음', medium: '장·단·감·증', hard: '+ 자리바꿈' },
+    arpeggio: true,
+  },
+};
+
+let mode = 'melody';
 
 function setHint(key) {
   $('staff-hint').textContent = HINTS[key];
+}
+
+function setMode(next) {
+  mode = next;
+  const info = MODES[mode];
+  for (const tab of document.querySelectorAll('.mode-tab')) {
+    tab.setAttribute('aria-selected', String(tab.dataset.mode === mode));
+  }
+  $('subtitle').textContent = info.subtitle;
+  for (const option of document.querySelectorAll('.difficulty-option')) {
+    option.querySelector('.difficulty-desc').textContent = info.levels[option.dataset.level];
+  }
+  $('btn-arpeggio').hidden = !info.arpeggio;
+  newQuestion();
 }
 
 let level = 'easy';
@@ -40,13 +70,25 @@ function pickPattern() {
 function newQuestion() {
   Sound.stop();
   clearTimeout(unlockTimer);
-  current = pickPattern();
   submitted = false;
-  staff.reset(current.length);
   staff.setLocked(true);
   $('btn-replay').disabled = true;
-  setHint('ready');
+  $('btn-arpeggio').disabled = true;
   renderResult(null);
+
+  // Temporary until the harmony stages land: show the harmony layout but keep it inactive.
+  if (mode === 'harmony') {
+    current = null;
+    staff.reset(3);
+    $('btn-question').disabled = true;
+    setHint('harmonyPending');
+    return;
+  }
+
+  current = pickPattern();
+  staff.reset(current.length);
+  $('btn-question').disabled = false;
+  setHint('ready');
 }
 
 function renderResult(marks) {
@@ -127,6 +169,12 @@ for (const option of document.querySelectorAll('.difficulty-option')) {
       other.setAttribute('aria-checked', String(other === option));
     }
     newQuestion();
+  });
+}
+
+for (const tab of document.querySelectorAll('.mode-tab')) {
+  tab.addEventListener('click', () => {
+    if (tab.dataset.mode !== mode) setMode(tab.dataset.mode);
   });
 }
 

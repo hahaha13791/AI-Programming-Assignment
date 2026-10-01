@@ -99,6 +99,38 @@ button:focus-visible {
   letter-spacing: 0.02em;
 }
 
+/* Mode tabs */
+
+.mode-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  background: var(--border);
+  border-radius: var(--radius);
+}
+
+.mode-tab {
+  min-height: 44px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.mode-tab:hover {
+  color: var(--text);
+}
+
+.mode-tab[aria-selected="true"] {
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
 /* Buttons */
 
 .btn {

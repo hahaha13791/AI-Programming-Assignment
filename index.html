@@ -10,8 +10,13 @@
   <main class="app">
     <header class="app-header">
       <h1>Listen to the world</h1>
-      <p class="subtitle">기준음을 듣고, 멜로디를 오선에 받아 적어 보세요.</p>
+      <p class="subtitle" id="subtitle">기준음을 듣고, 멜로디를 오선에 받아 적어 보세요.</p>
     </header>
+
+    <div class="mode-tabs" role="tablist" aria-label="연습 모드">
+      <button type="button" class="mode-tab" role="tab" aria-selected="true" data-mode="melody">멜로디</button>
+      <button type="button" class="mode-tab" role="tab" aria-selected="false" data-mode="harmony">화성</button>
+    </div>
 
     <section class="panel" aria-labelledby="difficulty-title">
       <h2 id="difficulty-title">난이도</h2>
@@ -37,6 +42,7 @@
         <button type="button" class="btn" id="btn-tonic">기준음(도) 듣기</button>
         <button type="button" class="btn btn-primary" id="btn-question">문제 듣기</button>
         <button type="button" class="btn" id="btn-replay">다시 듣기</button>
+        <button type="button" class="btn" id="btn-arpeggio" hidden>펼쳐 듣기</button>
       </div>
     </section>
 
