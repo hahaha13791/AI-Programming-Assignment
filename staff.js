@@ -20,10 +20,13 @@
   const ACCIDENTAL_CLEARANCE = 5;
 
   // On narrow screens the notes sit closer together so the staff can be drawn taller,
-  // which makes each line/space a bigger touch target.
+  // which makes each line/space a bigger touch target. Very small phones (~320px) tighten it once more
+  // to keep a line/space step at 7px or more.
   const compactQuery = window.matchMedia('(max-width: 480px)');
+  const tinyQuery = window.matchMedia('(max-width: 360px)');
 
   function layout() {
+    if (tinyQuery.matches) return { clefWidth: 46, noteSpacing: 30, width: 46 + 30 * MAX_NOTES + 4 };
     const compact = compactQuery.matches;
     const clefWidth = compact ? 52 : 64;
     const noteSpacing = compact ? 32 : 50;
@@ -182,11 +185,13 @@
     svg.append(ghostLayer);
     container.replaceChildren(svg);
 
-    compactQuery.addEventListener('change', () => {
-      geo = layout();
-      drawBackground(svg, background, geo);
-      render();
-    });
+    for (const query of [compactQuery, tinyQuery]) {
+      query.addEventListener('change', () => {
+        geo = layout();
+        drawBackground(svg, background, geo);
+        render();
+      });
+    }
 
     function stepAt(event) {
       const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(svg.getScreenCTM().inverse());

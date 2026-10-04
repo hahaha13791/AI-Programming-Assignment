@@ -459,4 +459,45 @@ button:focus-visible {
   .staff-hint {
     height: 3em;
   }
+
+  /* The two modes' subtitles wrap differently; reserving two lines keeps the staff still when switching tabs. */
+  .subtitle {
+    min-height: 3em;
+  }
+
+  /* Two listening buttons per row in both modes; melody's third button takes the whole row. */
+  .playback {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .playback .btn {
+    min-width: 0;
+    padding: 0 var(--space-2);
+  }
+
+  #btn-replay:has(+ #btn-arpeggio[hidden]) {
+    grid-column: span 2;
+  }
+}
+
+/* Very small phones (~320px): tighter padding and one-line difficulty labels. */
+@media (max-width: 360px) {
+  .app {
+    padding-left: var(--space-3);
+    padding-right: var(--space-3);
+  }
+
+  .panel {
+    padding: var(--space-3);
+  }
+
+  .difficulty-option {
+    padding: var(--space-3) var(--space-1);
+  }
+
+  .difficulty-desc {
+    font-size: 0.75rem;
+    white-space: nowrap;
+  }
 }
