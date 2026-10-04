@@ -1,4 +1,5 @@
 const TONIC = 60;
+const HARMONY_TOP_STEP = 11; // G5
 const $ = (id) => document.getElementById(id);
 
 const HINTS = {
@@ -6,7 +7,7 @@ const HINTS = {
   listening: '듣는 중이에요. 재생이 끝나면 입력할 수 있어요.',
   input: '들은 음을 오선에 순서대로 찍어 보세요. 다시 들어도 괜찮아요.',
   submitted: "채점 완료! 아래에서 정답을 확인하고 '다음 문제'로 넘어가세요.",
-  harmonyPending: '화성 모드는 준비 중이에요. 다음 업데이트에서 문제를 풀 수 있어요.',
+  harmonyPending: '소리는 준비 중이에요. 오선 한 자리에 구성음을 쌓아 보세요(다시 누르면 지워져요).',
 };
 
 const MODES = {
@@ -76,10 +77,11 @@ function newQuestion() {
   $('btn-arpeggio').disabled = true;
   renderResult(null);
 
-  // Temporary until the harmony stages land: show the harmony layout but keep it inactive.
+  // Temporary until chord playback and data land: harmony input works, but there is nothing to hear or submit.
   if (mode === 'harmony') {
     current = null;
-    staff.reset(3);
+    staff.reset(3, { chord: true, topStep: HARMONY_TOP_STEP });
+    staff.setLocked(false);
     $('btn-question').disabled = true;
     setHint('harmonyPending');
     return;

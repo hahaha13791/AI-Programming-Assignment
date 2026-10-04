@@ -304,6 +304,16 @@ button:focus-visible {
   fill: var(--wrong);
 }
 
+/* Harmony mode: hovering a stacked note shows it will be removed on click. */
+.note.is-removing {
+  opacity: 0.45;
+}
+
+.note.is-removing .staff-note,
+.note.is-removing .staff-accidental {
+  fill: var(--wrong);
+}
+
 /* Note chips and slots */
 
 .note-preview {
