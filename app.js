@@ -1,5 +1,7 @@
 const TONIC = 60;
 const HARMONY_TOP_STEP = 11; // G5
+// Temporary question for harmony mode until the chord data lands in stage 10.
+const SAMPLE_CHORD = Staff.parseNotes('도 미 솔');
 const $ = (id) => document.getElementById(id);
 
 const HINTS = {
@@ -7,7 +9,6 @@ const HINTS = {
   listening: '듣는 중이에요. 재생이 끝나면 입력할 수 있어요.',
   input: '들은 음을 오선에 순서대로 찍어 보세요. 다시 들어도 괜찮아요.',
   submitted: "채점 완료! 아래에서 정답을 확인하고 '다음 문제'로 넘어가세요.",
-  harmonyPending: '소리는 준비 중이에요. 오선 한 자리에 구성음을 쌓아 보세요(다시 누르면 지워져요).',
 };
 
 const MODES = {
@@ -15,18 +16,23 @@ const MODES = {
     subtitle: '기준음을 듣고, 멜로디를 오선에 받아 적어 보세요.',
     levels: { easy: '3~4음', medium: '5~6음', hard: '7~8음' },
     arpeggio: false,
+    hints: {},
   },
   harmony: {
     subtitle: '기준음을 듣고, 화음을 오선에 받아 적어 보세요.',
     levels: { easy: '장·단 3화음', medium: '장·단·감·증', hard: '+ 자리바꿈' },
     arpeggio: true,
+    hints: {
+      ready: "먼저 '문제 듣기'로 기준음과 화음을 끝까지 들어 보세요.",
+      input: '들은 구성음을 오선 한 자리에 쌓아 보세요. 다시 누르면 지워져요.',
+    },
   },
 };
 
 let mode = 'melody';
 
 function setHint(key) {
-  $('staff-hint').textContent = HINTS[key];
+  $('staff-hint').textContent = MODES[mode].hints[key] ?? HINTS[key];
 }
 
 function setMode(next) {
@@ -59,7 +65,8 @@ const staff = Staff.create({
 });
 
 function updateSubmit() {
-  $('btn-submit').disabled = !current || submitted || staff.getNotes().length !== current.length;
+  // Harmony grading arrives in stage 10; until then harmony answers can't be submitted.
+  $('btn-submit').disabled = !current || submitted || mode === 'harmony' || staff.getNotes().length !== current.length;
 }
 
 function pickPattern() {
@@ -77,18 +84,13 @@ function newQuestion() {
   $('btn-arpeggio').disabled = true;
   renderResult(null);
 
-  // Temporary until chord playback and data land: harmony input works, but there is nothing to hear or submit.
   if (mode === 'harmony') {
-    current = null;
-    staff.reset(3, { chord: true, topStep: HARMONY_TOP_STEP });
-    staff.setLocked(false);
-    $('btn-question').disabled = true;
-    setHint('harmonyPending');
-    return;
+    current = SAMPLE_CHORD;
+    staff.reset(current.length, { chord: true, topStep: HARMONY_TOP_STEP });
+  } else {
+    current = pickPattern();
+    staff.reset(current.length);
   }
-
-  current = pickPattern();
-  staff.reset(current.length);
   $('btn-question').disabled = false;
   setHint('ready');
 }
@@ -139,19 +141,31 @@ function renderResult(marks) {
 
 $('btn-tonic').addEventListener('click', () => Sound.play([TONIC]));
 
+function midis(notes) {
+  return notes.map(Staff.noteToMidi);
+}
+
+// Chord notes low to high, the order the arpeggio plays them in.
+function chordMidis() {
+  return midis(current).sort((a, b) => a - b);
+}
+
 $('btn-question').addEventListener('click', () => {
-  const seconds = Sound.play([TONIC, null, ...current.map(Staff.noteToMidi)]);
+  const question = mode === 'harmony' ? [chordMidis()] : midis(current);
+  const seconds = Sound.play([TONIC, null, ...question]);
   if (!$('btn-replay').disabled) return;
   setHint('listening');
   clearTimeout(unlockTimer);
   unlockTimer = setTimeout(() => {
     $('btn-replay').disabled = false;
+    $('btn-arpeggio').disabled = false;
     setHint('input');
     staff.setLocked(false);
   }, seconds * 1000);
 });
 
-$('btn-replay').addEventListener('click', () => Sound.play(current.map(Staff.noteToMidi)));
+$('btn-replay').addEventListener('click', () => Sound.play(mode === 'harmony' ? [chordMidis()] : midis(current)));
+$('btn-arpeggio').addEventListener('click', () => Sound.play(chordMidis()));
 
 $('btn-submit').addEventListener('click', () => {
   const input = staff.getNotes();

@@ -1,7 +1,10 @@
 (function () {
   const NOTE_LENGTH = 0.7;
+  const CHORD_LENGTH = 1.5;
   const NOTE_GAP = 0.15;
   const PEAK_GAIN = 0.3;
+  // Peak of all chord notes added together; kept well under 1 so three voices never clip.
+  const CHORD_PEAK_GAIN = 0.5;
   const ATTACK = 0.02;
   const FADE_OUT = 0.03;
 
@@ -31,19 +34,19 @@
     active = [];
   }
 
-  function scheduleNote(audio, midi, start) {
+  function scheduleNote(audio, midi, start, length = NOTE_LENGTH, peak = PEAK_GAIN) {
     const osc = audio.createOscillator();
     const gain = audio.createGain();
     osc.type = 'triangle';
     osc.frequency.value = midiToFrequency(midi);
 
     gain.gain.setValueAtTime(0, start);
-    gain.gain.linearRampToValueAtTime(PEAK_GAIN, start + ATTACK);
-    gain.gain.exponentialRampToValueAtTime(0.001, start + NOTE_LENGTH);
+    gain.gain.linearRampToValueAtTime(peak, start + ATTACK);
+    gain.gain.exponentialRampToValueAtTime(0.001, start + length);
 
     osc.connect(gain).connect(audio.destination);
     osc.start(start);
-    osc.stop(start + NOTE_LENGTH);
+    osc.stop(start + length);
 
     const entry = { osc, gain };
     active.push(entry);
@@ -52,16 +55,26 @@
     });
   }
 
-  // null in `midis` is a rest. Returns the playback length in seconds.
-  function play(midis) {
+  // Each item is a midi number, null (a rest), or an array of midis sounded together as a chord.
+  // Returns the playback length in seconds.
+  function play(items) {
     const audio = context();
     stop();
     const lead = 0.05;
-    const start = audio.currentTime + lead;
-    midis.forEach((midi, i) => {
-      if (midi !== null) scheduleNote(audio, midi, start + i * (NOTE_LENGTH + NOTE_GAP));
-    });
-    return lead + midis.length * (NOTE_LENGTH + NOTE_GAP) - NOTE_GAP;
+    let time = audio.currentTime + lead;
+    let end = time;
+    for (const item of items) {
+      if (Array.isArray(item)) {
+        const peak = Math.min(PEAK_GAIN, CHORD_PEAK_GAIN / item.length);
+        for (const midi of item) scheduleNote(audio, midi, time, CHORD_LENGTH, peak);
+        end = time + CHORD_LENGTH;
+      } else {
+        if (item !== null) scheduleNote(audio, item, time);
+        end = time + NOTE_LENGTH;
+      }
+      time = end + NOTE_GAP;
+    }
+    return end - audio.currentTime;
   }
 
   window.Sound = { play, stop };
