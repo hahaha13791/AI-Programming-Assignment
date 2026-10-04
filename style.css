@@ -12,6 +12,8 @@
   --correct-soft: #e3f1ea;
   --wrong: #a63c36;
   --wrong-soft: #f7e4e2;
+  --missed: #8a5a00;
+  --missed-soft: #f6ecd6;
 
   --fs-xl: 1.75rem;
   --fs-lg: 1.125rem;
@@ -304,6 +306,11 @@ button:focus-visible {
   fill: var(--wrong);
 }
 
+.note.is-missed .staff-note,
+.note.is-missed .staff-accidental {
+  fill: var(--missed);
+}
+
 /* Harmony mode: hovering a stacked note shows it will be removed on click. */
 .note.is-removing {
   opacity: 0.45;
@@ -351,6 +358,18 @@ button:focus-visible {
   content: " ✗";
 }
 
+.note-chip.is-missed {
+  background: var(--missed-soft);
+  color: var(--missed);
+  outline: 1.5px dashed var(--missed);
+  outline-offset: -1.5px;
+}
+
+.note-chip.is-missed::after {
+  content: " 빠뜨림";
+  font-weight: 500;
+}
+
 .note-slot {
   width: 44px;
   height: 32px;
@@ -395,6 +414,18 @@ button:focus-visible {
   font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text-muted);
+}
+
+.missed-notes {
+  margin: 0;
+  color: var(--missed);
+  font-weight: 600;
+}
+
+.chord-name {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: 600;
 }
 
 .answer-chips {

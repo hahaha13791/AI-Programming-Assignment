@@ -1,7 +1,5 @@
 const TONIC = 60;
 const HARMONY_TOP_STEP = 11; // G5
-// Temporary question for harmony mode until the chord data lands in stage 10.
-const SAMPLE_CHORD = Staff.parseNotes('도 미 솔');
 const $ = (id) => document.getElementById(id);
 
 const HINTS = {
@@ -50,7 +48,8 @@ function setMode(next) {
 }
 
 let level = 'easy';
-let current = null;
+let current = null; // the notes of the current question
+let chord = null; // harmony mode: the current chord ({ notes, name, ... })
 let submitted = false;
 let unlockTimer = null;
 
@@ -65,13 +64,12 @@ const staff = Staff.create({
 });
 
 function updateSubmit() {
-  // Harmony grading arrives in stage 10; until then harmony answers can't be submitted.
-  $('btn-submit').disabled = !current || submitted || mode === 'harmony' || staff.getNotes().length !== current.length;
+  $('btn-submit').disabled = !current || submitted || staff.getNotes().length !== current.length;
 }
 
-function pickPattern() {
-  const pool = PATTERNS[level];
-  const candidates = pool.filter((pattern) => pattern !== current);
+// A random item from the pool, never the same as the previous question.
+function pick(pool, previous) {
+  const candidates = pool.filter((item) => item !== previous);
   return candidates[Math.floor(Math.random() * candidates.length)];
 }
 
@@ -85,58 +83,90 @@ function newQuestion() {
   renderResult(null);
 
   if (mode === 'harmony') {
-    current = SAMPLE_CHORD;
+    chord = pick(CHORDS[level], chord);
+    current = chord.notes;
     staff.reset(current.length, { chord: true, topStep: HARMONY_TOP_STEP });
   } else {
-    current = pickPattern();
+    current = pick(PATTERNS[level], current);
     staff.reset(current.length);
   }
   $('btn-question').disabled = false;
   setHint('ready');
 }
 
-function renderResult(marks) {
+function element(tag, className, text) {
+  const node = document.createElement(tag);
+  node.className = className;
+  if (text) node.textContent = text;
+  return node;
+}
+
+function chipsOf(notes, marks) {
+  const chips = element('div', 'note-preview answer-chips');
+  chips.append(...notes.map((note, i) => {
+    const mark = marks?.[i];
+    const markClass = mark === true ? 'is-correct' : mark === 'missed' ? 'is-missed' : '';
+    return element('span', `note-chip ${markClass}`.trim(), Staff.noteLabel(note));
+  }));
+  return chips;
+}
+
+// result: null (nothing submitted), or { marks } for melody, or { marks, answerMarks, missed } for harmony.
+function renderResult(result) {
   const area = $('result-area');
-  if (!marks) {
-    const placeholder = document.createElement('p');
-    placeholder.className = 'placeholder';
-    placeholder.textContent = '제출하면 채점 결과가 여기에 표시됩니다.';
-    area.replaceChildren(placeholder);
+  if (!result) {
+    area.replaceChildren(element('p', 'placeholder', '제출하면 채점 결과가 여기에 표시됩니다.'));
     return;
   }
 
+  const { marks } = result;
   const correct = marks.filter(Boolean).length;
-  const score = document.createElement('p');
-  score.className = 'score';
-  score.textContent = correct === marks.length
-    ? `${marks.length}음 모두 정답이에요!`
-    : `${marks.length}음 중 ${correct}음 정답`;
+  const parts = [];
+  const answerStaff = element('div', 'staff-area answer-staff');
 
-  const answerTitle = document.createElement('h3');
-  answerTitle.className = 'answer-title';
-  answerTitle.textContent = '정답 멜로디';
+  if (mode === 'harmony') {
+    parts.push(element('p', 'score', correct === marks.length
+      ? `구성음 ${marks.length}개 모두 정답이에요!`
+      : `구성음 ${marks.length}개 중 ${correct}개 정답`));
+    if (result.missed.length) {
+      parts.push(element('p', 'missed-notes', `빠뜨린 음: ${result.missed.map(Staff.noteLabel).join(', ')}`));
+    }
+    parts.push(element('h3', 'answer-title', '정답 화음'));
+    parts.push(element('p', 'chord-name', chord.name));
+    Staff.draw(answerStaff, current, `정답 화음 오선. ${chord.name}`, { chord: true, marks: result.answerMarks });
+    parts.push(answerStaff, chipsOf(current, result.answerMarks));
+  } else {
+    parts.push(element('p', 'score', correct === marks.length
+      ? `${marks.length}음 모두 정답이에요!`
+      : `${marks.length}음 중 ${correct}음 정답`));
+    parts.push(element('h3', 'answer-title', '정답 멜로디'));
+    Staff.draw(answerStaff, current, '정답 멜로디 오선');
+    parts.push(answerStaff, chipsOf(current));
+  }
 
-  const answerStaff = document.createElement('div');
-  answerStaff.className = 'staff-area answer-staff';
-  Staff.draw(answerStaff, current, '정답 멜로디 오선');
-
-  const answerChips = document.createElement('div');
-  answerChips.className = 'note-preview answer-chips';
-  answerChips.append(...current.map((note) => {
-    const chip = document.createElement('span');
-    chip.className = 'note-chip';
-    chip.textContent = Staff.noteLabel(note);
-    return chip;
-  }));
-
-  const next = document.createElement('button');
+  const next = element('button', 'btn btn-primary', '다음 문제');
   next.type = 'button';
-  next.className = 'btn btn-primary';
   next.id = 'btn-next';
-  next.textContent = '다음 문제';
   next.addEventListener('click', newQuestion);
 
-  area.replaceChildren(score, answerTitle, answerStaff, answerChips, next);
+  area.replaceChildren(...parts, next);
+}
+
+// Melody: note by note in order. Enharmonic spellings count as the same pitch.
+function gradeMelody(input) {
+  return { marks: current.map((note, i) => Staff.noteToMidi(note) === Staff.noteToMidi(input[i])) };
+}
+
+// Harmony: order doesn't matter, but the octave does. Enharmonic spellings count as the same pitch.
+function gradeHarmony(input) {
+  const answer = new Set(midis(current));
+  const entered = new Set(midis(input));
+  const answerMarks = current.map((note) => entered.has(Staff.noteToMidi(note)) || 'missed');
+  return {
+    marks: input.map((note) => answer.has(Staff.noteToMidi(note))),
+    answerMarks,
+    missed: current.filter((note, i) => answerMarks[i] === 'missed'),
+  };
 }
 
 $('btn-tonic').addEventListener('click', () => Sound.play([TONIC]));
@@ -169,12 +199,12 @@ $('btn-arpeggio').addEventListener('click', () => Sound.play(chordMidis()));
 
 $('btn-submit').addEventListener('click', () => {
   const input = staff.getNotes();
-  const marks = current.map((note, i) => Staff.noteToMidi(note) === Staff.noteToMidi(input[i]));
+  const result = mode === 'harmony' ? gradeHarmony(input) : gradeMelody(input);
   submitted = true;
   setHint('submitted');
   staff.setLocked(true);
-  staff.setMarks(marks);
-  renderResult(marks);
+  staff.setMarks(result.marks);
+  renderResult(result);
   updateSubmit();
 });
 

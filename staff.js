@@ -98,8 +98,9 @@
     return { svg, background, notesLayer };
   }
 
+  // true: correct, false: wrong, 'missed': an answer note the user didn't enter.
   function markClass(mark) {
-    return mark === true ? 'is-correct' : mark === false ? 'is-wrong' : '';
+    return mark === true ? 'is-correct' : mark === false ? 'is-wrong' : mark === 'missed' ? 'is-missed' : '';
   }
 
   // Where each note of a chord goes: { shift, accidentalX } relative to the chord column, in the given order.
@@ -154,10 +155,14 @@
     });
   }
 
-  function draw(container, notes, label) {
+  function draw(container, notes, label, { chord = false, marks } = {}) {
     const geo = layout();
     const { svg, notesLayer } = buildStaff(label, geo);
-    notes.forEach((note, i) => drawNote(notesLayer, slotX(geo, i), note));
+    if (chord) {
+      drawChord(notesLayer, geo, notes, { marks });
+    } else {
+      notes.forEach((note, i) => drawNote(notesLayer, slotX(geo, i), note, { mark: marks?.[i] }));
+    }
     container.replaceChildren(svg);
   }
 
