@@ -1,5 +1,8 @@
-// 3화음, 음역 도(C4)~높은 솔(G5). [구성음(아래부터), 근음, 종류, 자리바꿈(0 기본 / 1 첫째 / 2 둘째)]
-window.CHORDS = {
+// 음역 도(C4)~높은 솔(G5). [구성음(아래부터), 근음, 종류, 자리바꿈(0 기본 / 1 첫째 / 2 둘째 / 3 셋째)]
+window.CHORDS = {};
+
+// 3화음
+CHORDS.triad = {
   // 장·단 3화음, 기본 위치
   easy: [
     ['도 미 솔', '도', '장', 0],
@@ -40,13 +43,23 @@ window.CHORDS = {
   ],
 };
 
+// 7화음 — 14단계 전까지는 샘플 화음
 {
-  const INVERSIONS = ['', ' 첫째 자리바꿈', ' 둘째 자리바꿈'];
-  for (const level of Object.keys(CHORDS)) {
-    CHORDS[level] = CHORDS[level].map(([text, root, quality, inversion]) => {
-      const notes = Staff.parseNotes(text);
-      const name = `${root} ${quality}3화음${INVERSIONS[inversion]} · ${notes.map(Staff.noteLabel).join(' ')}`;
-      return { notes, root, quality, inversion, name };
-    });
+  const sample = [['솔 시 높은레 높은파', '솔', '속7', 0], ['도 미 솔 시', '도', '장7', 0]];
+  CHORDS.seventh = { easy: sample, medium: sample, hard: sample };
+}
+
+{
+  const INVERSIONS = ['', ' 첫째 자리바꿈', ' 둘째 자리바꿈', ' 셋째 자리바꿈'];
+  for (const sets of Object.values(CHORDS)) {
+    for (const level of Object.keys(sets)) {
+      sets[level] = sets[level].map(([text, root, quality, inversion]) => {
+        const notes = Staff.parseNotes(text);
+        // "장" -> "장3화음", "속7" -> "속7화음"
+        const kind = notes.length === 3 ? `${quality}3화음` : `${quality}화음`;
+        const name = `${root} ${kind}${INVERSIONS[inversion]} · ${notes.map(Staff.noteLabel).join(' ')}`;
+        return { notes, root, quality, inversion, name };
+      });
+    }
   }
 }

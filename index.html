@@ -19,7 +19,13 @@
     </div>
 
     <section class="panel" aria-labelledby="difficulty-title">
-      <h2 id="difficulty-title">난이도</h2>
+      <div class="panel-head">
+        <h2 id="difficulty-title">난이도</h2>
+        <div class="chord-types" role="radiogroup" aria-label="화음 종류" id="chord-types" hidden>
+          <button type="button" class="chord-type" role="radio" aria-checked="true" data-type="triad">3화음</button>
+          <button type="button" class="chord-type" role="radio" aria-checked="false" data-type="seventh">7화음</button>
+        </div>
+      </div>
       <div class="difficulty" role="radiogroup" aria-label="난이도 선택">
         <button type="button" class="difficulty-option" role="radio" aria-checked="true" data-level="easy">
           <span class="difficulty-name">쉬움</span>

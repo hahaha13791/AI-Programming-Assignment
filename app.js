@@ -18,7 +18,10 @@ const MODES = {
   },
   harmony: {
     subtitle: '기준음을 듣고, 화음을 오선에 받아 적어 보세요.',
-    levels: { easy: '장·단 3화음', medium: '장·단·감·증', hard: '+ 자리바꿈' },
+    levels: {
+      triad: { easy: '장·단 3화음', medium: '장·단·감·증', hard: '+ 자리바꿈' },
+      seventh: { easy: '속7·장7', medium: '다섯 종류', hard: '+ 자리바꿈' },
+    },
     arpeggio: true,
     hints: {
       ready: "먼저 '문제 듣기'로 기준음과 화음을 끝까지 들어 보세요.",
@@ -28,6 +31,7 @@ const MODES = {
 };
 
 let mode = 'melody';
+let chordType = 'triad'; // harmony mode: 'triad' or 'seventh'
 
 function setHint(key) {
   $('staff-hint').textContent = MODES[mode].hints[key] ?? HINTS[key];
@@ -40,10 +44,25 @@ function setMode(next) {
     tab.setAttribute('aria-selected', String(tab.dataset.mode === mode));
   }
   $('subtitle').textContent = info.subtitle;
-  for (const option of document.querySelectorAll('.difficulty-option')) {
-    option.querySelector('.difficulty-desc').textContent = info.levels[option.dataset.level];
-  }
+  $('chord-types').hidden = mode !== 'harmony';
+  updateLevelDescriptions();
   $('btn-arpeggio').hidden = !info.arpeggio;
+  newQuestion();
+}
+
+function updateLevelDescriptions() {
+  const levels = mode === 'harmony' ? MODES.harmony.levels[chordType] : MODES[mode].levels;
+  for (const option of document.querySelectorAll('.difficulty-option')) {
+    option.querySelector('.difficulty-desc').textContent = levels[option.dataset.level];
+  }
+}
+
+function setChordType(next) {
+  chordType = next;
+  for (const button of document.querySelectorAll('.chord-type')) {
+    button.setAttribute('aria-checked', String(button.dataset.type === chordType));
+  }
+  updateLevelDescriptions();
   newQuestion();
 }
 
@@ -70,6 +89,7 @@ function updateSubmit() {
 // A random item from the pool, never the same as the previous question.
 function pick(pool, previous) {
   const candidates = pool.filter((item) => item !== previous);
+  if (!candidates.length) return pool[0];
   return candidates[Math.floor(Math.random() * candidates.length)];
 }
 
@@ -83,7 +103,7 @@ function newQuestion() {
   renderResult(null);
 
   if (mode === 'harmony') {
-    chord = pick(CHORDS[level], chord);
+    chord = pick(CHORDS[chordType][level], chord);
     current = chord.notes;
     staff.reset(current.length, { chord: true, topStep: HARMONY_TOP_STEP });
   } else {
@@ -215,6 +235,12 @@ for (const option of document.querySelectorAll('.difficulty-option')) {
       other.setAttribute('aria-checked', String(other === option));
     }
     newQuestion();
+  });
+}
+
+for (const button of document.querySelectorAll('.chord-type')) {
+  button.addEventListener('click', () => {
+    if (button.dataset.type !== chordType) setChordType(button.dataset.type);
   });
 }
 
