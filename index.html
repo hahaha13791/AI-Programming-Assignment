@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <main class="app">
+  <main class="app" id="app" data-mode="melody">
     <header class="app-header">
       <h1>Listen to the world</h1>
       <p class="subtitle" id="subtitle">기준음을 듣고, 멜로디를 오선에 받아 적어 보세요.</p>
@@ -16,6 +16,7 @@
     <div class="mode-tabs" role="tablist" aria-label="연습 모드">
       <button type="button" class="mode-tab" role="tab" aria-selected="true" data-mode="melody">멜로디</button>
       <button type="button" class="mode-tab" role="tab" aria-selected="false" data-mode="harmony">화성</button>
+      <button type="button" class="mode-tab" role="tab" aria-selected="false" data-mode="rhythm">리듬</button>
     </div>
 
     <section class="panel" aria-labelledby="difficulty-title">
@@ -56,12 +57,14 @@
       <h2 id="staff-title">받아 적기</h2>
       <p class="staff-hint" id="staff-hint" aria-live="polite"></p>
       <div class="staff-area" id="staff-area"></div>
+      <div class="staff-area rhythm-area" id="rhythm-area" hidden></div>
       <div class="note-preview" id="note-preview" aria-live="polite"></div>
       <div class="staff-controls">
-        <div class="accidentals" role="group" aria-label="임시표">
+        <div class="accidentals" id="accidentals" role="group" aria-label="임시표">
           <button type="button" class="btn-toggle" id="btn-sharp" aria-pressed="false" aria-label="샵(#)">♯&#xFE0E;</button>
           <button type="button" class="btn-toggle" id="btn-flat" aria-pressed="false" aria-label="플랫(♭)">♭&#xFE0E;</button>
         </div>
+        <div class="note-buttons" id="note-buttons" role="group" aria-label="음표" hidden></div>
         <button type="button" class="btn" id="btn-undo">마지막 음 지우기</button>
         <button type="button" class="btn" id="btn-clear">전체 지우기</button>
         <button type="button" class="btn btn-primary" id="btn-submit">제출</button>

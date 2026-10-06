@@ -28,7 +28,21 @@ const MODES = {
       input: '들은 구성음을 오선 한 자리에 쌓아 보세요. 다시 누르면 지워져요.',
     },
   },
+  rhythm: {
+    subtitle: '박자를 듣고, 리듬을 음표 버튼으로 받아 적어 보세요.',
+    // Hard doesn't show its measure count, which would give the time signature away.
+    levels: { easy: '2마디', medium: '+ 8분·쉼표', hard: '+ 점4분' },
+    tonic: false,
+    arpeggio: false,
+    hints: {
+      ready: "먼저 '문제 듣기'로 카운트인과 리듬을 끝까지 들어 보세요.",
+      input: '들은 리듬을 음표 버튼으로 순서대로 적어 보세요. 다시 들어도 괜찮아요.',
+    },
+  },
 };
+
+// Until the rhythm data arrives (stage 19): 4/4, two measures. Durations are in eighth notes.
+const SAMPLE_RHYTHM = { time: [4, 4], measures: [[2, 2, 4], [4, 2, 2]] };
 
 let mode = 'melody';
 let chordType = 'triad'; // harmony mode: 'triad' or 'seventh'
@@ -43,10 +57,17 @@ function setMode(next) {
   for (const tab of document.querySelectorAll('.mode-tab')) {
     tab.setAttribute('aria-selected', String(tab.dataset.mode === mode));
   }
+  $('app').dataset.mode = mode;
   $('subtitle').textContent = info.subtitle;
   $('chord-types').hidden = mode !== 'harmony';
   updateLevelDescriptions();
+  $('btn-tonic').hidden = info.tonic === false;
   $('btn-arpeggio').hidden = !info.arpeggio;
+  const rhythm = mode === 'rhythm';
+  $('staff-area').hidden = rhythm;
+  $('accidentals').hidden = rhythm;
+  $('rhythm-area').hidden = !rhythm;
+  $('note-buttons').hidden = !rhythm;
   newQuestion();
 }
 
@@ -83,7 +104,8 @@ const staff = Staff.create({
 });
 
 function updateSubmit() {
-  $('btn-submit').disabled = !current || submitted || staff.getNotes().length !== current.length;
+  // Rhythm input arrives in stage 17; until then there is nothing to submit.
+  $('btn-submit').disabled = !current || submitted || mode === 'rhythm' || staff.getNotes().length !== current.length;
 }
 
 // A random item from the pool, never the same as the previous question.
@@ -106,6 +128,9 @@ function newQuestion() {
     chord = pick(CHORDS[chordType][level], chord);
     current = chord.notes;
     staff.reset(current.length, { chord: true, topStep: HARMONY_TOP_STEP });
+  } else if (mode === 'rhythm') {
+    current = SAMPLE_RHYTHM;
+    staff.reset(0);
   } else {
     current = pick(PATTERNS[level], current);
     staff.reset(current.length);
@@ -200,9 +225,15 @@ function chordMidis() {
   return midis(current).sort((a, b) => a - b);
 }
 
-$('btn-question').addEventListener('click', () => {
+// What "문제 듣기" plays. Rhythm playback arrives in stage 18; until then it plays nothing and unlocks input.
+function questionItems() {
+  if (mode === 'rhythm') return [];
   const question = mode === 'harmony' ? [chordMidis()] : midis(current);
-  const seconds = Sound.play([TONIC, null, ...question]);
+  return [TONIC, null, ...question];
+}
+
+$('btn-question').addEventListener('click', () => {
+  const seconds = Sound.play(questionItems());
   if (!$('btn-replay').disabled) return;
   setHint('listening');
   clearTimeout(unlockTimer);
@@ -214,7 +245,10 @@ $('btn-question').addEventListener('click', () => {
   }, seconds * 1000);
 });
 
-$('btn-replay').addEventListener('click', () => Sound.play(mode === 'harmony' ? [chordMidis()] : midis(current)));
+$('btn-replay').addEventListener('click', () => {
+  if (mode === 'rhythm') return;
+  Sound.play(mode === 'harmony' ? [chordMidis()] : midis(current));
+});
 $('btn-arpeggio').addEventListener('click', () => Sound.play(chordMidis()));
 
 $('btn-submit').addEventListener('click', () => {

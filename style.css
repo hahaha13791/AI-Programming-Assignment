@@ -50,6 +50,11 @@ body {
   word-break: keep-all;
 }
 
+/* Elements that set their own display (flex, grid) would otherwise ignore the hidden attribute. */
+[hidden] {
+  display: none !important;
+}
+
 button {
   font: inherit;
   transition: background-color 0.15s, border-color 0.15s, color 0.15s;
@@ -124,10 +129,6 @@ button:focus-visible {
   border-radius: var(--radius-sm);
 }
 
-.chord-types[hidden] {
-  display: none;
-}
-
 .chord-type {
   min-height: 30px;
   padding: 0 var(--space-3);
@@ -155,7 +156,7 @@ button:focus-visible {
 
 .mode-tabs {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: var(--space-1);
   padding: var(--space-1);
   background: var(--border);
@@ -309,6 +310,11 @@ button:focus-visible {
   cursor: pointer;
 }
 
+/* Rhythm mode: the rhythm staff takes the five-line staff's place (drawn from stage 17). */
+.rhythm-area {
+  min-height: 120px;
+}
+
 .staff.is-locked,
 .answer-staff .staff {
   cursor: default;
@@ -439,6 +445,18 @@ button:focus-visible {
   gap: var(--space-2);
 }
 
+/* Rhythm mode: the note buttons take their own row above the erase/submit buttons. */
+.note-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  flex-basis: 100%;
+  gap: var(--space-2);
+}
+
+.note-buttons:empty {
+  display: none;
+}
+
 /* Result */
 
 .result-area {
@@ -515,7 +533,12 @@ button:focus-visible {
     min-height: 3em;
   }
 
-  /* Two listening buttons per row in both modes; melody's third button takes the whole row. */
+}
+
+/* Below the width where all four harmony buttons fit on one row, every mode uses the same two-row grid
+   so switching modes doesn't move the staff. Melody's third button takes the whole second row; rhythm has
+   only two buttons and keeps the second row empty. */
+@media (max-width: 680px) {
   .playback {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -526,8 +549,12 @@ button:focus-visible {
     padding: 0 var(--space-2);
   }
 
-  #btn-replay:has(+ #btn-arpeggio[hidden]) {
+  #btn-tonic:not([hidden]) ~ #btn-replay:has(+ #btn-arpeggio[hidden]) {
     grid-column: span 2;
+  }
+
+  .app[data-mode="rhythm"] .playback {
+    grid-template-rows: repeat(2, var(--control-height));
   }
 }
 
