@@ -42,9 +42,6 @@ const MODES = {
   },
 };
 
-// Until the rhythm data arrives (stage 19): 4/4, two measures. Note types as in Rhythm.TYPES.
-const SAMPLE_RHYTHM = { time: [4, 4], measures: [['q', 'q', 'h'], ['h', 'q', 'q']] };
-
 let mode = 'melody';
 let chordType = 'triad'; // harmony mode: 'triad' or 'seventh'
 
@@ -93,7 +90,7 @@ function setChordType(next) {
 }
 
 let level = 'easy';
-let current = null; // the notes of the current question
+let current = null; // the notes of the current question; rhythm mode: { time, measures }
 let chord = null; // harmony mode: the current chord ({ notes, name, ... })
 let submitted = false;
 let unlockTimer = null;
@@ -148,7 +145,7 @@ function newQuestion() {
     current = chord.notes;
     staff.reset(current.length, { chord: true, topStep: HARMONY_TOP_STEP });
   } else if (mode === 'rhythm') {
-    current = SAMPLE_RHYTHM;
+    current = pick(RHYTHMS[level], current);
     staff.reset(0);
     // Hard: the time signature and measure count are part of the answer, so neither is shown.
     const hard = level === 'hard';
@@ -182,16 +179,12 @@ function chipsOf(notes, marks) {
   return chips;
 }
 
-// result: null (nothing submitted), or { marks } for melody, or { marks, answerMarks, missed } for harmony.
+// result: null (nothing submitted), or { marks } for melody, or { marks, answerMarks, missed } for harmony,
+// or { marks (per answer measure), extra (measures written beyond the answer), timeCorrect (hard only) } for rhythm.
 function renderResult(result) {
   const area = $('result-area');
   if (!result) {
     area.replaceChildren(element('p', 'placeholder', '제출하면 채점 결과가 여기에 표시됩니다.'));
-    return;
-  }
-
-  if (result.pending) {
-    area.replaceChildren(element('p', 'placeholder', '리듬 채점은 19단계에서 연결돼요.'), nextButton());
     return;
   }
 
@@ -200,7 +193,27 @@ function renderResult(result) {
   const parts = [];
   const answerStaff = element('div', 'staff-area answer-staff');
 
-  if (mode === 'harmony') {
+  if (mode === 'rhythm') {
+    parts.push(element('p', 'score', correct === marks.length && !result.extra
+      ? `${marks.length}마디 모두 정답이에요!`
+      : `${marks.length}마디 중 ${correct}마디 정답`));
+    if (result.extra) {
+      parts.push(element('p', 'extra-measures', `정답은 ${marks.length}마디예요. 넘치게 적은 ${result.extra}마디는 오답이에요.`));
+    }
+    if (result.timeCorrect !== undefined) {
+      const answerTime = `${current.time[0]}/4`;
+      parts.push(element('p', `time-result ${result.timeCorrect ? 'is-correct' : 'is-wrong'}`, result.timeCorrect
+        ? `박자표 정답 (${answerTime})`
+        : `박자표 오답 (정답 ${answerTime})`));
+    }
+    parts.push(element('h3', 'answer-title', '정답 리듬'));
+    answerStaff.classList.add('rhythm-area');
+    // Only the measures the user got right are coloured; the rest of the answer stays neutral.
+    Rhythm.draw(answerStaff, current, `정답 리듬 보표, ${current.time[0]}/4박자 ${marks.length}마디`, {
+      marks: marks.map((mark) => mark || undefined),
+    });
+    parts.push(answerStaff);
+  } else if (mode === 'harmony') {
     parts.push(element('p', 'score', correct === marks.length
       ? `구성음 ${marks.length}개 모두 정답이에요!`
       : `구성음 ${marks.length}개 중 ${correct}개 정답`));
@@ -245,6 +258,22 @@ function gradeHarmony(input) {
     marks: input.map((note) => answer.has(Staff.noteToMidi(note))),
     answerMarks,
     missed: current.filter((note, i) => answerMarks[i] === 'missed'),
+  };
+}
+
+// Rhythm: measure by measure; a measure is right only if its notes and rests match in length and order.
+// Hard: a wrong time signature makes every measure wrong. The score is out of the answer's measure count;
+// measures the user wrote beyond it are marked wrong on their staff.
+function gradeRhythm(input) {
+  const hard = level === 'hard';
+  const timeCorrect = input.time === current.time[0];
+  const same = (a = [], b) => a.length === b.length && a.every((type, i) => type === b[i]);
+  const marks = current.measures.map((measure, i) => timeCorrect && same(input.measures[i], measure));
+  return {
+    marks,
+    inputMarks: input.measures.map((_, i) => marks[i] ?? false),
+    extra: Math.max(0, input.measures.length - marks.length),
+    timeCorrect: hard ? timeCorrect : undefined,
   };
 }
 
@@ -296,11 +325,12 @@ $('btn-arpeggio').addEventListener('click', () => Sound.play(chordMidis()));
 
 $('btn-submit').addEventListener('click', () => {
   if (mode === 'rhythm') {
-    // Grading arrives in stage 19; until then submitting only closes the input.
+    const result = gradeRhythm(rhythm.getInput());
     submitted = true;
     setHint('submitted');
     rhythm.setLocked(true);
-    renderResult({ pending: true });
+    rhythm.setMarks(result.inputMarks);
+    renderResult(result);
     updateSubmit();
     return;
   }

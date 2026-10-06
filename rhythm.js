@@ -237,15 +237,18 @@
       return fixedMeasures ? isFull() : filled() % measureLength() === 0;
     }
 
-    // Measures on screen: all of them for easy/medium; for hard, the finished ones plus the one being filled.
+    // Measures on screen: all of them for easy/medium; for hard, the finished ones plus the one being filled
+    // (once graded, only the ones that were written).
     function shownMeasures() {
       if (fixedMeasures) return fixedMeasures;
       if (!time) return 1;
+      if (marks) return Math.max(1, Math.ceil(filled() / measureLength()));
       return Math.min(MAX_MEASURES, Math.floor(filled() / measureLength()) + 1);
     }
 
     function progressText() {
       if (!time) return '박자표를 고르면 입력할 수 있어요.';
+      if (marks) return `제출한 리듬 · ${Math.ceil(filled() / measureLength())}마디`;
       const done = filled() / measureLength();
       if (isFull()) return `${maxMeasures()}마디를 모두 채웠어요. 제출해 보세요.`;
       if (!fixedMeasures && notes.length && Number.isInteger(done)) {

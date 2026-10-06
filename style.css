@@ -631,6 +631,39 @@ button:focus-visible {
   font-weight: 600;
 }
 
+.extra-measures {
+  margin: 0;
+  color: var(--wrong);
+  font-weight: 600;
+}
+
+/* Rhythm (hard): whether the chosen time signature was right, shown as a coloured badge. */
+.time-result {
+  align-self: flex-start;
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+}
+
+.time-result.is-correct {
+  background: var(--correct-soft);
+  color: var(--correct);
+}
+
+.time-result.is-wrong {
+  background: var(--wrong-soft);
+  color: var(--wrong);
+}
+
+.time-result.is-correct::before {
+  content: "✓ ";
+}
+
+.time-result.is-wrong::before {
+  content: "✗ ";
+}
+
 .chord-name {
   margin: 0;
   font-size: var(--fs-lg);
