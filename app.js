@@ -259,15 +259,22 @@ function chordMidis() {
   return midis(current).sort((a, b) => a - b);
 }
 
-// What "문제 듣기" plays. Rhythm playback arrives in stage 18; until then it plays nothing and unlocks input.
-function questionItems() {
-  if (mode === 'rhythm') return [];
+// Rhythm: count-in, then the rhythm. Hard's count-in doesn't give the time signature away.
+// Returns the playback length in seconds.
+function playRhythm() {
+  const { events, total } = Rhythm.schedule(current, { fixedCountIn: level !== 'hard' });
+  return Sound.playEvents(events, total);
+}
+
+// "문제 듣기": tonic, a pause, then the question (melody/harmony), or count-in and rhythm.
+function playQuestion() {
+  if (mode === 'rhythm') return playRhythm();
   const question = mode === 'harmony' ? [chordMidis()] : midis(current);
-  return [TONIC, null, ...question];
+  return Sound.play([TONIC, null, ...question]);
 }
 
 $('btn-question').addEventListener('click', () => {
-  const seconds = Sound.play(questionItems());
+  const seconds = playQuestion();
   if (!$('btn-replay').disabled) return;
   setHint('listening');
   clearTimeout(unlockTimer);
@@ -280,9 +287,10 @@ $('btn-question').addEventListener('click', () => {
   }, seconds * 1000);
 });
 
+// "다시 듣기": the question again without the tonic; rhythm keeps its count-in.
 $('btn-replay').addEventListener('click', () => {
-  if (mode === 'rhythm') return;
-  Sound.play(mode === 'harmony' ? [chordMidis()] : midis(current));
+  if (mode === 'rhythm') playRhythm();
+  else Sound.play(mode === 'harmony' ? [chordMidis()] : midis(current));
 });
 $('btn-arpeggio').addEventListener('click', () => Sound.play(chordMidis()));
 

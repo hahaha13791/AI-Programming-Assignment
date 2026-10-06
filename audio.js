@@ -7,6 +7,10 @@
   const CHORD_PEAK_GAIN = 0.5;
   const ATTACK = 0.02;
   const FADE_OUT = 0.03;
+  // Sustained notes settle to this share of their peak, then fade out over RELEASE at the end.
+  const SUSTAIN_LEVEL = 0.7;
+  const SUSTAIN_DECAY = 0.12;
+  const RELEASE = 0.05;
 
   let ctx = null;
   let active = [];
@@ -34,7 +38,9 @@
     active = [];
   }
 
-  function scheduleNote(audio, midi, start, length = NOTE_LENGTH, peak = PEAK_GAIN) {
+  // sustain: hold the tone for its whole length (rhythm notes, so a half note and "quarter + rest" sound
+  // different); otherwise it decays like a plucked note.
+  function scheduleNote(audio, midi, start, length = NOTE_LENGTH, peak = PEAK_GAIN, sustain = false) {
     const osc = audio.createOscillator();
     const gain = audio.createGain();
     osc.type = 'triangle';
@@ -42,7 +48,13 @@
 
     gain.gain.setValueAtTime(0, start);
     gain.gain.linearRampToValueAtTime(peak, start + ATTACK);
-    gain.gain.exponentialRampToValueAtTime(0.001, start + length);
+    if (sustain) {
+      gain.gain.linearRampToValueAtTime(peak * SUSTAIN_LEVEL, start + SUSTAIN_DECAY);
+      gain.gain.setValueAtTime(peak * SUSTAIN_LEVEL, start + length - RELEASE);
+      gain.gain.linearRampToValueAtTime(0, start + length);
+    } else {
+      gain.gain.exponentialRampToValueAtTime(0.001, start + length);
+    }
 
     osc.connect(gain).connect(audio.destination);
     osc.start(start);
@@ -77,5 +89,20 @@
     return end - audio.currentTime;
   }
 
-  window.Sound = { play, stop };
+  // Plays events at exact times: [{ start (seconds from now), length, midi, peak, sustain }].
+  // `total` covers silence after the last event (a rhythm ending on a rest).
+  // Returns the playback length in seconds.
+  function playEvents(events, total = 0) {
+    const audio = context();
+    stop();
+    const time = audio.currentTime + 0.05;
+    let end = time + total;
+    for (const { start, length, midi, peak, sustain } of events) {
+      scheduleNote(audio, midi, time + start, length, peak, sustain);
+      end = Math.max(end, time + start + length);
+    }
+    return end - audio.currentTime;
+  }
+
+  window.Sound = { play, playEvents, stop };
 })();

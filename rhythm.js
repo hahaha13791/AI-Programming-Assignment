@@ -351,5 +351,47 @@
     };
   }
 
-  window.Rhythm = { create, draw, TYPES, LEVEL_TYPES, lengthOf, splitMeasures };
+  // Playback, ♩ = 80. Everything sounds at one pitch; clicks are short and higher.
+  const BEAT = 60 / 80;
+  const EIGHTH = BEAT / 2;
+  const TONE = 72; // C5
+  const CLICK = 84; // C6
+  const CLICK_HIGH = 96; // C7: the count-in's first beat (easy/medium)
+  const CLICK_LENGTH = 0.08;
+  const CLICK_PEAK = 0.3;
+  const NOTE_PEAK = 0.3;
+  const ACCENT_PEAK = 0.45; // a measure's first beat
+  const NOTE_SHARE = 0.9; // a note sounds for this share of its written length
+
+  // rhythm: { time: [beats, 4], measures: [[type, ...], ...] }.
+  // fixedCountIn: true = one measure of count-in with a high first click (the time signature is given);
+  // false = four identical clicks that only set the tempo (hard, where the time signature is the question).
+  // Returns { events (for Sound.playEvents), total (seconds, including trailing rests), start (when the rhythm begins) }.
+  function schedule(rhythm, { fixedCountIn = true } = {}) {
+    const beats = fixedCountIn ? rhythm.time[0] : 4;
+    const events = [];
+    for (let i = 0; i < beats; i++) {
+      const high = fixedCountIn && i === 0;
+      events.push({ kind: 'click', start: i * BEAT, length: CLICK_LENGTH, midi: high ? CLICK_HIGH : CLICK, peak: CLICK_PEAK });
+    }
+    const start = beats * BEAT;
+    let time = start;
+    for (const measure of rhythm.measures) {
+      let position = 0;
+      for (const type of measure) {
+        const length = TYPES[type].length * EIGHTH;
+        if (!TYPES[type].rest) {
+          events.push({
+            kind: 'note', type, start: time, length: length * NOTE_SHARE, midi: TONE,
+            peak: position === 0 ? ACCENT_PEAK : NOTE_PEAK, sustain: true,
+          });
+        }
+        position += TYPES[type].length;
+        time += length;
+      }
+    }
+    return { events, total: time, start };
+  }
+
+  window.Rhythm = { create, draw, schedule, TYPES, LEVEL_TYPES, lengthOf, splitMeasures };
 })();
