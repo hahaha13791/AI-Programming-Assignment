@@ -37,18 +37,21 @@ const MODES = {
     hints: {
       ready: "먼저 '문제 듣기'로 카운트인과 리듬을 끝까지 들어 보세요.",
       input: '들은 리듬을 음표 버튼으로 순서대로 적어 보세요. 다시 들어도 괜찮아요.',
+      inputHard: '박자표를 고른 뒤, 들은 리듬을 음표 버튼으로 적어 보세요.',
     },
   },
 };
 
-// Until the rhythm data arrives (stage 19): 4/4, two measures. Durations are in eighth notes.
-const SAMPLE_RHYTHM = { time: [4, 4], measures: [[2, 2, 4], [4, 2, 2]] };
+// Until the rhythm data arrives (stage 19): 4/4, two measures. Note types as in Rhythm.TYPES.
+const SAMPLE_RHYTHM = { time: [4, 4], measures: [['q', 'q', 'h'], ['h', 'q', 'q']] };
 
 let mode = 'melody';
 let chordType = 'triad'; // harmony mode: 'triad' or 'seventh'
 
 function setHint(key) {
-  $('staff-hint').textContent = MODES[mode].hints[key] ?? HINTS[key];
+  const hints = MODES[mode].hints;
+  const hardHint = mode === 'rhythm' && level === 'hard' ? hints[`${key}Hard`] : undefined;
+  $('staff-hint').textContent = hardHint ?? hints[key] ?? HINTS[key];
 }
 
 function setMode(next) {
@@ -67,7 +70,9 @@ function setMode(next) {
   $('staff-area').hidden = rhythm;
   $('accidentals').hidden = rhythm;
   $('rhythm-area').hidden = !rhythm;
-  $('note-buttons').hidden = !rhythm;
+  $('rhythm-controls').hidden = !rhythm;
+  $('note-preview').hidden = rhythm;
+  $('rhythm-progress').hidden = !rhythm;
   newQuestion();
 }
 
@@ -103,9 +108,22 @@ const staff = Staff.create({
   onChange: updateSubmit,
 });
 
+const rhythm = Rhythm.create({
+  container: $('rhythm-area'),
+  buttons: $('note-buttons'),
+  timeButtons: $('time-signatures'),
+  progress: $('rhythm-progress'),
+  undoButton: $('btn-undo'),
+  clearButton: $('btn-clear'),
+  onChange: updateSubmit,
+});
+
 function updateSubmit() {
-  // Rhythm input arrives in stage 17; until then there is nothing to submit.
-  $('btn-submit').disabled = !current || submitted || mode === 'rhythm' || staff.getNotes().length !== current.length;
+  if (!current || submitted) {
+    $('btn-submit').disabled = true;
+    return;
+  }
+  $('btn-submit').disabled = mode === 'rhythm' ? !rhythm.canSubmit() : staff.getNotes().length !== current.length;
 }
 
 // A random item from the pool, never the same as the previous question.
@@ -119,6 +137,7 @@ function newQuestion() {
   Sound.stop();
   clearTimeout(unlockTimer);
   submitted = false;
+  rhythm.setLocked(true);
   staff.setLocked(true);
   $('btn-replay').disabled = true;
   $('btn-arpeggio').disabled = true;
@@ -131,6 +150,13 @@ function newQuestion() {
   } else if (mode === 'rhythm') {
     current = SAMPLE_RHYTHM;
     staff.reset(0);
+    // Hard: the time signature and measure count are part of the answer, so neither is shown.
+    const hard = level === 'hard';
+    rhythm.reset({
+      types: Rhythm.LEVEL_TYPES[level],
+      time: hard ? null : current.time[0],
+      measures: hard ? null : current.measures.length,
+    });
   } else {
     current = pick(PATTERNS[level], current);
     staff.reset(current.length);
@@ -164,6 +190,11 @@ function renderResult(result) {
     return;
   }
 
+  if (result.pending) {
+    area.replaceChildren(element('p', 'placeholder', '리듬 채점은 19단계에서 연결돼요.'), nextButton());
+    return;
+  }
+
   const { marks } = result;
   const correct = marks.filter(Boolean).length;
   const parts = [];
@@ -189,12 +220,15 @@ function renderResult(result) {
     parts.push(answerStaff, chipsOf(current));
   }
 
+  area.replaceChildren(...parts, nextButton());
+}
+
+function nextButton() {
   const next = element('button', 'btn btn-primary', '다음 문제');
   next.type = 'button';
   next.id = 'btn-next';
   next.addEventListener('click', newQuestion);
-
-  area.replaceChildren(...parts, next);
+  return next;
 }
 
 // Melody: note by note in order. Enharmonic spellings count as the same pitch.
@@ -241,7 +275,8 @@ $('btn-question').addEventListener('click', () => {
     $('btn-replay').disabled = false;
     $('btn-arpeggio').disabled = false;
     setHint('input');
-    staff.setLocked(false);
+    if (mode === 'rhythm') rhythm.setLocked(false);
+    else staff.setLocked(false);
   }, seconds * 1000);
 });
 
@@ -252,6 +287,15 @@ $('btn-replay').addEventListener('click', () => {
 $('btn-arpeggio').addEventListener('click', () => Sound.play(chordMidis()));
 
 $('btn-submit').addEventListener('click', () => {
+  if (mode === 'rhythm') {
+    // Grading arrives in stage 19; until then submitting only closes the input.
+    submitted = true;
+    setHint('submitted');
+    rhythm.setLocked(true);
+    renderResult({ pending: true });
+    updateSubmit();
+    return;
+  }
   const input = staff.getNotes();
   const result = mode === 'harmony' ? gradeHarmony(input) : gradeMelody(input);
   submitted = true;

@@ -299,10 +299,12 @@
     sharpButton.addEventListener('click', () => setAccidental(1));
     flatButton.addEventListener('click', () => setAccidental(-1));
     undoButton.addEventListener('click', () => {
+      if (locked) return;
       notes.pop();
       render();
     });
     clearButton.addEventListener('click', () => {
+      if (locked) return;
       notes = [];
       render();
     });

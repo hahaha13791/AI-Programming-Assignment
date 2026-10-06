@@ -59,12 +59,16 @@
       <div class="staff-area" id="staff-area"></div>
       <div class="staff-area rhythm-area" id="rhythm-area" hidden></div>
       <div class="note-preview" id="note-preview" aria-live="polite"></div>
+      <p class="note-preview rhythm-progress" id="rhythm-progress" aria-live="polite" hidden></p>
       <div class="staff-controls">
         <div class="accidentals" id="accidentals" role="group" aria-label="임시표">
           <button type="button" class="btn-toggle" id="btn-sharp" aria-pressed="false" aria-label="샵(#)">♯&#xFE0E;</button>
           <button type="button" class="btn-toggle" id="btn-flat" aria-pressed="false" aria-label="플랫(♭)">♭&#xFE0E;</button>
         </div>
-        <div class="note-buttons" id="note-buttons" role="group" aria-label="음표" hidden></div>
+        <div class="rhythm-controls" id="rhythm-controls" hidden>
+          <div class="time-signatures" id="time-signatures" role="radiogroup" aria-label="박자표" hidden></div>
+          <div class="note-buttons" id="note-buttons" role="group" aria-label="음표"></div>
+        </div>
         <button type="button" class="btn" id="btn-undo">마지막 음 지우기</button>
         <button type="button" class="btn" id="btn-clear">전체 지우기</button>
         <button type="button" class="btn btn-primary" id="btn-submit">제출</button>
@@ -83,6 +87,7 @@
   <script src="audio.js"></script>
   <script src="patterns.js"></script>
   <script src="chords.js"></script>
+  <script src="rhythm.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

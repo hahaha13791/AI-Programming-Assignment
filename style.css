@@ -310,9 +310,71 @@ button:focus-visible {
   cursor: pointer;
 }
 
-/* Rhythm mode: the rhythm staff takes the five-line staff's place (drawn from stage 17). */
-.rhythm-area {
-  min-height: 120px;
+/* Rhythm staff: a one-line staff with stems up. Notes use currentColor so a measure's mark colours it. */
+.rhythm-staff {
+  display: block;
+  width: 100%;
+  height: auto;
+  color: var(--text);
+}
+
+.rhythm-line,
+.rhythm-bar {
+  stroke: var(--text);
+  stroke-width: 1.2;
+}
+
+.rhythm-current {
+  fill: var(--accent-soft);
+}
+
+.rhythm-time {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 20px;
+  font-weight: 700;
+  text-anchor: middle;
+  fill: var(--text);
+}
+
+.rh-fill {
+  fill: currentColor;
+}
+
+.rh-open {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+}
+
+.rh-whole {
+  stroke-width: 2.4;
+}
+
+.rh-stem {
+  stroke: currentColor;
+  stroke-width: 1.4;
+}
+
+.rh-rest {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.measure.is-correct {
+  color: var(--correct);
+}
+
+.measure.is-wrong {
+  color: var(--wrong);
+}
+
+.rhythm-progress {
+  margin-bottom: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
 }
 
 .staff.is-locked,
@@ -445,16 +507,95 @@ button:focus-visible {
   gap: var(--space-2);
 }
 
-/* Rhythm mode: the note buttons take their own row above the erase/submit buttons. */
-.note-buttons {
-  display: flex;
-  flex-wrap: wrap;
+/* Rhythm mode: time signature (hard) and note buttons take their own rows above the erase/submit buttons. */
+.rhythm-controls {
   flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
   gap: var(--space-2);
 }
 
-.note-buttons:empty {
-  display: none;
+.time-signatures {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.time-signature-label {
+  margin-right: var(--space-1);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.time-signature {
+  flex: 0 1 64px;
+  min-width: 0;
+  height: var(--control-height);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.time-signature:not(:disabled):hover {
+  border-color: var(--guide);
+}
+
+.time-signature[aria-checked="true"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.time-signature:disabled,
+.note-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.note-buttons {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 7), 1fr);
+  gap: var(--space-2);
+}
+
+.note-button {
+  min-width: 0;
+  min-height: 64px;
+  padding: var(--space-1) 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.note-button:not(:disabled):hover {
+  border-color: var(--guide);
+  background: var(--bg);
+}
+
+.note-icon {
+  width: 22px;
+  height: 30px;
+  color: var(--text);
+}
+
+.note-button-label {
+  font-size: 0.75rem;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: var(--text-muted);
 }
 
 /* Result */
@@ -526,6 +667,10 @@ button:focus-visible {
 
   .staff-hint {
     height: 3em;
+  }
+
+  .note-buttons {
+    grid-template-columns: repeat(var(--phone-cols, 4), 1fr);
   }
 
   /* The two modes' subtitles wrap differently; reserving two lines keeps the staff still when switching tabs. */
