@@ -233,11 +233,11 @@ $('editor').addEventListener('click', (event) => {
 
 // 내 악보 practice: the chosen score is split into sections, practised one at a time.
 let sectionIndex = 0;
-let section = null; // { start, end, notes (with rests), label }
+let section = null; // { start, end, notes (with rests), label, time }
 
 function scoreSections() {
   const score = scoreId && scores.get(scoreId);
-  return score ? Score.sections(score) : [];
+  return score ? Score.sections(score).map((item) => ({ ...item, time: score.time })) : [];
 }
 
 // One chip per section; the chosen one is checked and scrolled into view (the row scrolls sideways).
@@ -406,9 +406,16 @@ function renderResult(result) {
     parts.push(element('p', 'score', correct === marks.length
       ? `${marks.length}음 모두 정답이에요!`
       : `${marks.length}음 중 ${correct}음 정답`));
-    const what = mode === 'score' ? '구간' : '멜로디';
-    parts.push(element('h3', 'answer-title', `정답 ${what}`));
-    Staff.draw(answerStaff, current, `정답 ${what} 오선`);
+    if (mode === 'score') {
+      // The section as written, rhythm included: the notes were heard in it.
+      parts.push(element('h3', 'answer-title', `정답 구간 (${section.label})`));
+      Score.draw(answerStaff, { time: section.time, notes: section.notes }, {
+        label: `정답 구간 악보, ${section.label}. ${current.map(Staff.noteLabel).join(' ')}`,
+      });
+    } else {
+      parts.push(element('h3', 'answer-title', '정답 멜로디'));
+      Staff.draw(answerStaff, current, '정답 멜로디 오선');
+    }
     parts.push(answerStaff, chipsOf(current));
   }
 
@@ -419,7 +426,11 @@ function nextButton() {
   const next = element('button', 'btn btn-primary', '다음 문제');
   next.type = 'button';
   next.id = 'btn-next';
-  next.addEventListener('click', newQuestion);
+  next.addEventListener('click', () => {
+    // 내 악보 goes through the score section by section, back to the first after the last.
+    if (mode === 'score') sectionIndex = (sectionIndex + 1) % Math.max(1, scoreSections().length);
+    newQuestion();
+  });
   return next;
 }
 
