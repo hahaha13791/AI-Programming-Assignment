@@ -329,13 +329,47 @@ button:focus-visible {
   font-size: var(--fs-sm);
 }
 
-/* Section chips scroll sideways rather than wrap, so any number of them keeps the panel's height. */
+/* Section chips scroll sideways rather than wrap, so any number of them keeps the panel's height. The scrollbar
+   is hidden so it doesn't eat into the chips' height; swiping, the mouse wheel (app.js) and Tab still scroll. */
 .section-chips {
   display: flex;
   gap: 6px;
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: thin;
+  scrollbar-width: none;
+}
+
+.section-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.section-chip {
+  flex: none;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.section-chip:not(:disabled):hover {
+  border-color: var(--guide);
+  color: var(--text);
+}
+
+.section-chip[aria-checked="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.section-chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .score-notice {

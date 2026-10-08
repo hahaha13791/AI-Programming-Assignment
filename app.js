@@ -47,6 +47,7 @@ const MODES = {
       ready: "먼저 '문제 듣기'로 기준음과 구간을 끝까지 들어 보세요.",
       input: '들은 음을 오선에 순서대로 찍어 보세요. 리듬은 적지 않아요.',
       empty: "저장된 악보가 없어요. '새 악보'로 만들어 보세요.",
+      noNotes: "이 악보에는 음이 없어요. '편집'에서 음을 넣어 보세요.",
     },
   },
 };
@@ -136,6 +137,7 @@ function renderScorePicker() {
   select.disabled = !list.length || editing;
   $('btn-new-score').disabled = editing;
   $('btn-edit-score').disabled = !scoreId || editing;
+  for (const chip of $('section-chips').children) chip.disabled = editing;
 }
 
 // The editor. editingId: undefined while closed, null for a new score, otherwise the id of the score being edited.
@@ -206,6 +208,7 @@ $('editor-save').addEventListener('click', () => {
   const saved = scores.save({ ...editor.getScore(), id: editingId ?? undefined });
   if (!saved) return;
   scoreId = saved.id;
+  sectionIndex = 0;
   backToPractice();
 });
 // Deleting takes a second press (no browser dialog). Any other press in the editor, or a few seconds, undoes the first.
@@ -218,24 +221,47 @@ $('editor-delete').addEventListener('click', () => {
     return;
   }
   scores.remove(editingId);
-  if (scoreId === editingId) scoreId = scores.list()[0]?.id ?? null;
+  if (scoreId === editingId) {
+    scoreId = scores.list()[0]?.id ?? null;
+    sectionIndex = 0;
+  }
   backToPractice();
 });
 $('editor').addEventListener('click', (event) => {
   if (!event.target.closest('#editor-delete')) resetDelete();
 }, true);
 
-// Until sections are split (stage 24): the score's first two measures, at most eight notes, rests left out.
-function firstSection(score) {
-  const end = score.time * 2 * 2;
-  const notes = [];
-  let filled = 0;
-  for (const note of score.notes) {
-    if (filled >= end) break;
-    if (!Rhythm.TYPES[note.type].rest) notes.push({ step: note.step, accidental: note.accidental });
-    filled += Rhythm.TYPES[note.type].length;
+// 내 악보 practice: the chosen score is split into sections, practised one at a time.
+let sectionIndex = 0;
+let section = null; // { start, end, notes (with rests), label }
+
+function scoreSections() {
+  const score = scoreId && scores.get(scoreId);
+  return score ? Score.sections(score) : [];
+}
+
+// One chip per section; the chosen one is checked and scrolled into view (the row scrolls sideways).
+function renderSectionChips(list) {
+  const row = $('section-chips');
+  const chips = list.map((item, i) => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'section-chip';
+    chip.setAttribute('role', 'radio');
+    chip.setAttribute('aria-checked', String(i === sectionIndex));
+    chip.textContent = item.label;
+    chip.disabled = editingId !== undefined;
+    chip.addEventListener('click', () => {
+      sectionIndex = i;
+      newQuestion();
+    });
+    return chip;
+  });
+  row.replaceChildren(...chips);
+  const chosen = chips[sectionIndex];
+  if (chosen && (chosen.offsetLeft < row.scrollLeft || chosen.offsetLeft + chosen.offsetWidth > row.scrollLeft + row.clientWidth)) {
+    row.scrollLeft = chosen.offsetLeft - 8;
   }
-  return notes.slice(0, 8);
 }
 
 const staff = Staff.create({
@@ -298,15 +324,20 @@ function newQuestion() {
       measures: hard ? null : current.measures.length,
     });
   } else if (mode === 'score') {
-    const score = scoreId && scores.get(scoreId);
-    current = score ? firstSection(score) : null;
+    const list = scoreSections();
+    if (sectionIndex >= list.length) sectionIndex = 0;
+    section = list[sectionIndex] ?? null;
+    // Only the pitches are written down; rests and lengths are heard, not entered.
+    current = section ? section.notes.filter((note) => !Rhythm.TYPES[note.type].rest)
+      .map(({ step, accidental }) => ({ step, accidental })) : null;
     staff.reset(current ? current.length : 0, { topStep: HARMONY_TOP_STEP });
+    renderSectionChips(list);
   } else {
     current = pick(PATTERNS[level], current);
     staff.reset(current.length);
   }
   $('btn-question').disabled = !current;
-  setHint(current ? 'ready' : 'empty');
+  setHint(current ? 'ready' : scoreId ? 'noNotes' : 'empty');
 }
 
 function element(tag, className, text) {
@@ -443,9 +474,17 @@ function playRhythm() {
   return Sound.playEvents(events, total);
 }
 
+// 내 악보: the section in the score's rhythm, after the tonic and a pause when `tonic` is set.
+// Returns the playback length in seconds.
+function playSection(tonic) {
+  const { events, total } = Score.schedule(section.notes, { tonic });
+  return Sound.playEvents(events, total);
+}
+
 // "문제 듣기": tonic, a pause, then the question (melody/harmony), or count-in and rhythm.
 function playQuestion() {
   if (mode === 'rhythm') return playRhythm();
+  if (mode === 'score') return playSection(true);
   const question = mode === 'harmony' ? [chordMidis()] : midis(current);
   return Sound.play([TONIC, null, ...question]);
 }
@@ -467,6 +506,7 @@ $('btn-question').addEventListener('click', () => {
 // "다시 듣기": the question again without the tonic; rhythm keeps its count-in.
 $('btn-replay').addEventListener('click', () => {
   if (mode === 'rhythm') playRhythm();
+  else if (mode === 'score') playSection(false);
   else Sound.play(mode === 'harmony' ? [chordMidis()] : midis(current));
 });
 $('btn-arpeggio').addEventListener('click', () => Sound.play(chordMidis()));
@@ -508,8 +548,17 @@ for (const button of document.querySelectorAll('.chord-type')) {
   });
 }
 
+// The chip row has no visible scrollbar, so a vertical mouse wheel scrolls it sideways when it overflows.
+$('section-chips').addEventListener('wheel', (event) => {
+  const row = $('section-chips');
+  if (row.scrollWidth <= row.clientWidth || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+  row.scrollLeft += event.deltaY;
+  event.preventDefault();
+}, { passive: false });
+
 $('score-select').addEventListener('change', (event) => {
   scoreId = event.target.value;
+  sectionIndex = 0;
   newQuestion();
 });
 

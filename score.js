@@ -395,7 +395,9 @@
     const isFull = () => filled() >= measureLength() * maxMeasures;
     const remaining = () => (isFull() ? 0 : measureLength() - (filled() % measureLength()));
     const title = () => titleInput.value.trim();
-    const canSave = () => Boolean(title()) && notes.length > 0 && filled() % measureLength() === 0;
+    // A score of rests only would have nothing to practise.
+    const hasPitch = () => notes.some((note) => !TYPES[note.type].rest);
+    const canSave = () => Boolean(title()) && hasPitch() && filled() % measureLength() === 0;
 
     function add(note) {
       if (TYPES[note.type].length > remaining()) return;
@@ -406,6 +408,7 @@
     function progressText() {
       const done = filled() / measureLength();
       if (!notes.length) return '길이를 고른 뒤, 오선의 줄이나 칸을 눌러 음을 넣으세요.';
+      if (!hasPitch() && Number.isInteger(done)) return `${done}마디 완성 · 쉼표만 있으면 저장할 수 없어요. 음을 넣어 주세요.`;
       if (isFull()) return `${maxMeasures}마디가 다 찼어요.${title() ? ' 저장해 보세요.' : ' 제목을 적으면 저장할 수 있어요.'}`;
       if (Number.isInteger(done)) return `${done}마디 완성 · ${title() ? '이어서 적거나 저장하세요.' : '제목을 적으면 저장할 수 있어요.'}`;
       return `${Math.floor(done) + 1}마디 · 남은 박 ${Rhythm.beatsText(remaining())}`;
@@ -461,5 +464,50 @@
     };
   }
 
-  window.Score = { draw, createEditor, splitMeasures, shownAccidentals, beamRoles, stemDirections };
+  // Practice sections: two measures at a time from the start, or one measure when the two hold more than eight
+  // notes (one measure never holds more than eight). Sections with no notes (rests only) are skipped.
+  // Returns [{ start, end (measure indices, inclusive), notes (with rests), label }].
+  const SECTION_NOTES = 8;
+
+  function sections(score) {
+    const measures = splitMeasures(score.notes, score.time);
+    const count = (measure) => measure.filter((note) => !TYPES[note.type].rest).length;
+    const list = [];
+    for (let i = 0; i < measures.length;) {
+      const two = i + 1 < measures.length && count(measures[i]) + count(measures[i + 1]) <= SECTION_NOTES;
+      const end = two ? i + 1 : i;
+      const notes = measures.slice(i, end + 1).flat();
+      if (notes.some((note) => !TYPES[note.type].rest)) {
+        list.push({ start: i, end, notes, label: end > i ? `${i + 1}~${end + 1}마디` : `${i + 1}마디` });
+      }
+      i = end + 1;
+    }
+    return list;
+  }
+
+  // Playback at ♩ = 80, in the score's rhythm: each note sounds for 90% of its length, rests are silent and every
+  // note has the same volume (pitch practice, so no downbeat accent). tonic: the reference C first, then a pause
+  // as long as melody mode's. Returns { events (for Sound.playEvents), total (seconds, trailing rests included) }.
+  const BEAT = 60 / 80;
+  const EIGHTH = BEAT / 2;
+  const NOTE_SHARE = 0.9;
+  const NOTE_PEAK = 0.3;
+  const TONIC_MIDI = 60;
+  const TONIC_LENGTH = 0.7;
+  const LEAD_IN = 1.7; // tonic 0.7s + gap 0.15s + a silent beat 0.7s + gap 0.15s, as in Sound.play([tonic, null, ...])
+
+  function schedule(notes, { tonic = true } = {}) {
+    const events = tonic ? [{ start: 0, length: TONIC_LENGTH, midi: TONIC_MIDI, peak: NOTE_PEAK, sustain: false }] : [];
+    let time = tonic ? LEAD_IN : 0;
+    for (const note of notes) {
+      const length = TYPES[note.type].length * EIGHTH;
+      if (!TYPES[note.type].rest) {
+        events.push({ start: time, length: length * NOTE_SHARE, midi: Staff.noteToMidi(note), peak: NOTE_PEAK, sustain: true });
+      }
+      time += length;
+    }
+    return { events, total: time };
+  }
+
+  window.Score = { draw, createEditor, sections, schedule, LEAD_IN, EIGHTH, splitMeasures, shownAccidentals, beamRoles, stemDirections };
 })();
