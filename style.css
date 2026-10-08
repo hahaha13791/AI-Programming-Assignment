@@ -729,6 +729,92 @@ button:focus-visible {
   color: var(--text-muted);
 }
 
+/* Score editor (내 악보) */
+
+.app[data-editing] .practice {
+  display: none;
+}
+
+.editor-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+}
+
+.editor-title {
+  flex: 1 1 220px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.editor-label {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.editor-title input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: var(--control-height);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.editor-title input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.editor-hint {
+  margin: var(--space-3) 0;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.editor-lengths {
+  margin-bottom: var(--space-3);
+}
+
+.note-button[aria-checked="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.note-button[aria-checked="true"] .note-icon,
+.note-button[aria-checked="true"] .note-button-label {
+  color: var(--accent);
+}
+
+.editor-tools {
+  margin-top: var(--space-3);
+}
+
+.editor-actions {
+  margin-top: var(--space-4);
+}
+
+.btn-danger {
+  color: var(--wrong);
+}
+
+/* The first press asks for a second one; the button turns red until then. */
+.btn-danger.is-confirm,
+.btn-danger.is-confirm:not(:disabled):hover {
+  border-color: var(--wrong);
+  background: var(--wrong);
+  color: #fff;
+  font-weight: 600;
+}
+
 /* Result */
 
 .result-area {

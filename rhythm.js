@@ -396,5 +396,5 @@
     return { events, total: time, start };
   }
 
-  window.Rhythm = { create, draw, schedule, TYPES, LEVEL_TYPES, lengthOf, splitMeasures };
+  window.Rhythm = { create, draw, schedule, iconFor, beatsText, TYPES, LEVEL_TYPES, lengthOf, splitMeasures };
 })();

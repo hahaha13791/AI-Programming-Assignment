@@ -56,7 +56,37 @@
       </div>
     </section>
 
-    <section class="panel" aria-labelledby="playback-title">
+    <!-- 내 악보 editor: takes the place of the listening, writing and result panels while open. -->
+    <section class="panel editor" id="editor" aria-labelledby="editor-heading" hidden>
+      <h2 id="editor-heading">악보 편집</h2>
+      <div class="editor-meta">
+        <label class="editor-title">
+          <span class="editor-label">제목</span>
+          <input type="text" id="editor-title" maxlength="30" placeholder="악보 제목 (30자까지)" autocomplete="off">
+        </label>
+        <div class="time-signatures" id="editor-times" role="radiogroup" aria-label="박자표"></div>
+      </div>
+      <p class="editor-hint">같은 마디라도 올리거나 내린 음은 ♯/♭을 켜고 찍으세요. 못갖춘마디는 앞을 쉼표로 채우세요.</p>
+      <div class="note-buttons editor-lengths" id="editor-lengths" role="group" aria-label="음 길이"></div>
+      <div class="staff-area editor-pad" id="editor-pad"></div>
+      <div class="staff-controls editor-tools">
+        <div class="accidentals" role="group" aria-label="임시표">
+          <button type="button" class="btn-toggle" id="editor-sharp" aria-pressed="false" aria-label="샵(#)">♯&#xFE0E;</button>
+          <button type="button" class="btn-toggle" id="editor-flat" aria-pressed="false" aria-label="플랫(♭)">♭&#xFE0E;</button>
+        </div>
+        <button type="button" class="btn" id="editor-undo">마지막 음 지우기</button>
+        <button type="button" class="btn" id="editor-clear">전체 지우기</button>
+      </div>
+      <p class="note-preview rhythm-progress" id="editor-progress" aria-live="polite"></p>
+      <div class="staff-area score-area" id="editor-view"></div>
+      <div class="staff-controls editor-actions">
+        <button type="button" class="btn btn-danger" id="editor-delete">삭제</button>
+        <button type="button" class="btn" id="editor-cancel">취소</button>
+        <button type="button" class="btn btn-primary" id="editor-save">저장</button>
+      </div>
+    </section>
+
+    <section class="panel practice" aria-labelledby="playback-title">
       <h2 id="playback-title">듣기</h2>
       <div class="playback">
         <button type="button" class="btn" id="btn-tonic">기준음(도) 듣기</button>
@@ -66,7 +96,7 @@
       </div>
     </section>
 
-    <section class="panel" aria-labelledby="staff-title">
+    <section class="panel practice" aria-labelledby="staff-title">
       <h2 id="staff-title">받아 적기</h2>
       <p class="staff-hint" id="staff-hint" aria-live="polite"></p>
       <div class="staff-area" id="staff-area"></div>
@@ -88,7 +118,7 @@
       </div>
     </section>
 
-    <section class="panel" aria-labelledby="result-title">
+    <section class="panel practice" aria-labelledby="result-title">
       <h2 id="result-title">결과</h2>
       <div class="result-area" id="result-area">
         <p class="placeholder">제출하면 채점 결과가 여기에 표시됩니다.</p>

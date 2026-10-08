@@ -122,6 +122,8 @@
       if (!storage) return false;
       try {
         storage.setItem(STORAGE_KEY, JSON.stringify(scores));
+        // The whole list is now stored, so an earlier failure or dropped score no longer needs a notice.
+        notice = null;
         return true;
       } catch {
         notice = NOTICES.saveFailed;

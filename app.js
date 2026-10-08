@@ -61,6 +61,8 @@ function setHint(key) {
 }
 
 function setMode(next) {
+  // Leaving 내 악보 while editing works like 취소: the unsaved changes are dropped.
+  if (editingId !== undefined) closeEditor();
   mode = next;
   const info = MODES[mode];
   for (const tab of document.querySelectorAll('.mode-tab')) {
@@ -128,12 +130,100 @@ function renderScorePicker() {
     option.textContent = score.title;
     return option;
   }));
-  select.disabled = !list.length;
   if (scoreId) select.value = scoreId;
-  // The editor opens in stage 23.
-  $('btn-new-score').disabled = true;
-  $('btn-edit-score').disabled = true;
+  // While the editor is open the score can't be switched under it.
+  const editing = editingId !== undefined;
+  select.disabled = !list.length || editing;
+  $('btn-new-score').disabled = editing;
+  $('btn-edit-score').disabled = !scoreId || editing;
 }
+
+// The editor. editingId: undefined while closed, null for a new score, otherwise the id of the score being edited.
+let editingId;
+let deleteTimer = null;
+const DELETE_LABEL = '삭제';
+const DELETE_CONFIRM = '한 번 더 누르면 삭제';
+const DELETE_WAIT = 3000;
+
+const editor = Score.createEditor({
+  titleInput: $('editor-title'),
+  timeButtons: $('editor-times'),
+  lengthButtons: $('editor-lengths'),
+  pad: $('editor-pad'),
+  sharpButton: $('editor-sharp'),
+  flatButton: $('editor-flat'),
+  undoButton: $('editor-undo'),
+  clearButton: $('editor-clear'),
+  progress: $('editor-progress'),
+  view: $('editor-view'),
+  maxMeasures: Scores.MAX_MEASURES,
+  onChange: () => {
+    $('editor-save').disabled = !editor.canSave();
+  },
+});
+
+function openEditor(id) {
+  Sound.stop();
+  clearTimeout(unlockTimer);
+  editingId = id;
+  resetDelete();
+  $('editor-heading').textContent = id ? '악보 편집' : '새 악보';
+  $('editor-delete').hidden = !id;
+  $('editor').hidden = false;
+  $('app').dataset.editing = '';
+  editor.open(id ? scores.get(id) : null);
+  renderScorePicker();
+}
+
+function closeEditor() {
+  editingId = undefined;
+  resetDelete();
+  $('editor').hidden = true;
+  delete $('app').dataset.editing;
+}
+
+// Back to practice on the chosen score, with whatever the store has to say (a failed write).
+function backToPractice() {
+  closeEditor();
+  renderScoreNotice();
+  renderScorePicker();
+  newQuestion();
+}
+
+function resetDelete() {
+  clearTimeout(deleteTimer);
+  $('editor-delete').classList.remove('is-confirm');
+  $('editor-delete').textContent = DELETE_LABEL;
+}
+
+$('btn-new-score').addEventListener('click', () => openEditor(null));
+$('btn-edit-score').addEventListener('click', () => {
+  if (scoreId) openEditor(scoreId);
+});
+$('editor-cancel').addEventListener('click', backToPractice);
+$('editor-save').addEventListener('click', () => {
+  if (!editor.canSave()) return;
+  const saved = scores.save({ ...editor.getScore(), id: editingId ?? undefined });
+  if (!saved) return;
+  scoreId = saved.id;
+  backToPractice();
+});
+// Deleting takes a second press (no browser dialog). Any other press in the editor, or a few seconds, undoes the first.
+$('editor-delete').addEventListener('click', () => {
+  const button = $('editor-delete');
+  if (!button.classList.contains('is-confirm')) {
+    button.classList.add('is-confirm');
+    button.textContent = DELETE_CONFIRM;
+    deleteTimer = setTimeout(resetDelete, DELETE_WAIT);
+    return;
+  }
+  scores.remove(editingId);
+  if (scoreId === editingId) scoreId = scores.list()[0]?.id ?? null;
+  backToPractice();
+});
+$('editor').addEventListener('click', (event) => {
+  if (!event.target.closest('#editor-delete')) resetDelete();
+}, true);
 
 // Until sections are split (stage 24): the score's first two measures, at most eight notes, rests left out.
 function firstSection(score) {

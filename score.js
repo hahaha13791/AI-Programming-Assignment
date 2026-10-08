@@ -90,8 +90,9 @@
     });
   }
 
-  // Everything needed to draw and space one measure.
-  function measureInfo(measure) {
+  // Everything needed to draw and space one measure. `missing`: eighths not written yet (a measure being filled
+  // in the editor keeps room for them).
+  function measureInfo(measure, measureLength) {
     const accidentals = shownAccidentals(measure);
     const roles = beamRoles(measure);
     const stems = stemDirections(measure, roles);
@@ -104,7 +105,8 @@
       return { left, head, right, min: left + head + right + MIN.gap };
     });
     const min = MEASURE_PAD_LEFT + MEASURE_PAD_RIGHT + parts.reduce((sum, part) => sum + part.min, 0);
-    return { measure, accidentals, roles, stems, parts, min };
+    const missing = measureLength - measure.reduce((sum, note) => sum + TYPES[note.type].length, 0);
+    return { measure, accidentals, roles, stems, parts, min, missing };
   }
 
   // Shares `total` out by weight, but never below each item's minimum (water-filling).
@@ -207,12 +209,15 @@
     });
     parent.append(group);
     if (current) {
-      group.append(svgEl('rect', {
+      // Behind the row's staff lines, so they stay visible through the highlight.
+      parent.prepend(svgEl('rect', {
         x: x0 + 2, y: oy + stepY(10) - 22, width: width - 4, height: stepY(2) - stepY(10) + 44, rx: 6, class: 'sv-current',
+        'data-measure': info.index,
       }));
     }
     const inner = width - MEASURE_PAD_LEFT - MEASURE_PAD_RIGHT;
-    const sizes = distribute(inner, info.parts.map((part) => part.min), info.measure.map((note) => TYPES[note.type].length));
+    const sizes = distribute(inner, [...info.parts.map((part) => part.min), 0],
+      [...info.measure.map((note) => TYPES[note.type].length), info.missing]);
     let x = x0 + MEASURE_PAD_LEFT;
     const heads = info.measure.map((note, i) => {
       const head = x + info.parts[i].left + info.parts[i].head / 2;
@@ -244,7 +249,8 @@
   }
 
   // score: { time, notes }. options: { marks (per measure: true / false), current (measure index to highlight),
-  // label }. The drawing follows the box's width: it is redrawn when the box crosses WIDE_MIN.
+  // open (being written: an empty measure follows the last full one, up to maxMeasures, and no final barline),
+  // maxMeasures, label }. The drawing follows the box's width: it is redrawn when the box crosses WIDE_MIN.
   function draw(container, score, options = {}) {
     container.__score = { score, options };
     if (!container.__scoreObserver) {
@@ -263,7 +269,12 @@
     const { score, options } = container.__score;
     const wide = isWide(container);
     const width = wide ? WIDTH.wide : WIDTH.narrow;
-    const infos = splitMeasures(score.notes, score.time).map((measure, index) => ({ ...measureInfo(measure), index }));
+    const measureLength = score.time * 2;
+    const measures = splitMeasures(score.notes, score.time);
+    const filled = score.notes.reduce((sum, note) => sum + TYPES[note.type].length, 0);
+    const hasRoom = measures.length < (options.maxMeasures ?? Infinity);
+    if (!measures.length || (options.open && filled % measureLength === 0 && hasRoom)) measures.push([]);
+    const infos = measures.map((measure, index) => ({ ...measureInfo(measure, measureLength), index }));
     const rows = layoutRows(infos, width, wide ? 4 : 2);
     const perRow = wide ? 4 : 2;
     const svg = svgEl('svg', {
@@ -300,7 +311,7 @@
           mark: options.marks?.[index], current: options.current === index,
         });
         x += widths[k];
-        const final = index === infos.length - 1;
+        const final = index === infos.length - 1 && !options.open;
         const top = oy + stepY(10);
         const bottom = oy + stepY(2);
         rowGroup.append(svgEl('line', { x1: x - (final ? 4 : 0), x2: x - (final ? 4 : 0), y1: top, y2: bottom, class: 'sv-bar' }));
@@ -311,5 +322,144 @@
     return svg;
   }
 
-  window.Score = { draw, splitMeasures, shownAccidentals, beamRoles, stemDirections };
+  // The score editor: pick a length, then press a line/space on the input pad to add that note at the end.
+  // The quarter rest button adds a rest straight away. Measures split automatically; lengths that don't fit the
+  // rest of the measure can't be chosen. Saving, cancelling and deleting belong to the page (onChange reports
+  // every edit so it can update the save button).
+  const LENGTHS = ['w', 'h.', 'h', 'q.', 'q', 'e'];
+  const TIMES = [2, 3, 4];
+
+  function createEditor({ titleInput, timeButtons, lengthButtons, pad, sharpButton, flatButton, undoButton, clearButton,
+    progress, view, maxMeasures, onChange }) {
+    let notes = [];
+    let time = 4;
+    let selected = 'q';
+
+    const padStaff = Staff.create({
+      container: pad, sharpButton, flatButton, onPick: (step, accidental) => add({ type: selected, step, accidental }),
+    });
+    padStaff.reset(0, { topStep: 11 });
+    pad.querySelector('svg').setAttribute('aria-label', '음 높이 입력판. 줄이나 칸을 누르면 고른 길이의 음이 악보 끝에 붙어요.');
+
+    const timeList = TIMES.map((beats) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'time-signature';
+      button.setAttribute('role', 'radio');
+      button.setAttribute('aria-label', `${beats}/4박자`);
+      button.dataset.beats = beats;
+      button.textContent = `${beats}/4`;
+      button.addEventListener('click', () => {
+        if (notes.length || beats === time) return;
+        time = beats;
+        update();
+      });
+      return button;
+    });
+    const label = document.createElement('span');
+    label.className = 'time-signature-label';
+    label.textContent = '박자표';
+    timeButtons.replaceChildren(label, ...timeList);
+
+    function lengthButton(type) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'note-button';
+      button.dataset.type = type;
+      const text = document.createElement('span');
+      text.className = 'note-button-label';
+      text.textContent = TYPES[type].short;
+      button.append(Rhythm.iconFor(type), text);
+      return button;
+    }
+    const lengthList = LENGTHS.map((type) => {
+      const button = lengthButton(type);
+      button.setAttribute('role', 'radio');
+      button.setAttribute('aria-label', `${TYPES[type].name} 길이`);
+      button.addEventListener('click', () => {
+        selected = type;
+        update();
+      });
+      return button;
+    });
+    const restButton = lengthButton('r');
+    restButton.classList.add('is-rest');
+    restButton.setAttribute('aria-label', '4분쉼표 넣기');
+    restButton.addEventListener('click', () => add({ type: 'r' }));
+    lengthButtons.replaceChildren(...lengthList, restButton);
+    lengthButtons.style.setProperty('--cols', 7);
+    lengthButtons.style.setProperty('--phone-cols', 4);
+
+    const measureLength = () => time * 2;
+    const filled = () => notes.reduce((sum, note) => sum + TYPES[note.type].length, 0);
+    const isFull = () => filled() >= measureLength() * maxMeasures;
+    const remaining = () => (isFull() ? 0 : measureLength() - (filled() % measureLength()));
+    const title = () => titleInput.value.trim();
+    const canSave = () => Boolean(title()) && notes.length > 0 && filled() % measureLength() === 0;
+
+    function add(note) {
+      if (TYPES[note.type].length > remaining()) return;
+      notes.push(note);
+      update();
+    }
+
+    function progressText() {
+      const done = filled() / measureLength();
+      if (!notes.length) return '길이를 고른 뒤, 오선의 줄이나 칸을 눌러 음을 넣으세요.';
+      if (isFull()) return `${maxMeasures}마디가 다 찼어요.${title() ? ' 저장해 보세요.' : ' 제목을 적으면 저장할 수 있어요.'}`;
+      if (Number.isInteger(done)) return `${done}마디 완성 · ${title() ? '이어서 적거나 저장하세요.' : '제목을 적으면 저장할 수 있어요.'}`;
+      return `${Math.floor(done) + 1}마디 · 남은 박 ${Rhythm.beatsText(remaining())}`;
+    }
+
+    function update() {
+      // A chosen length that no longer fits gives way to the longest one that does.
+      const left = remaining();
+      if (left && TYPES[selected].length > left) {
+        selected = LENGTHS.find((type) => TYPES[type].length <= left);
+      }
+      for (const button of lengthList) {
+        button.disabled = TYPES[button.dataset.type].length > left;
+        button.setAttribute('aria-checked', String(button.dataset.type === selected && left > 0));
+      }
+      restButton.disabled = TYPES.r.length > left;
+      for (const button of timeList) {
+        button.disabled = notes.length > 0 && Number(button.dataset.beats) !== time;
+        button.setAttribute('aria-checked', String(Number(button.dataset.beats) === time));
+      }
+      padStaff.setLocked(isFull());
+      undoButton.disabled = !notes.length;
+      clearButton.disabled = !notes.length;
+      progress.textContent = progressText();
+      draw(view, { time, notes }, {
+        open: true, maxMeasures, current: isFull() ? -1 : Math.floor(filled() / measureLength()),
+        label: `편집 중인 악보, ${time}/4박자. ${progressText()}`,
+      });
+      onChange?.();
+    }
+
+    undoButton.addEventListener('click', () => {
+      notes.pop();
+      update();
+    });
+    clearButton.addEventListener('click', () => {
+      notes = [];
+      update();
+    });
+    titleInput.addEventListener('input', update);
+
+    return {
+      // score: a stored score to edit, or null for a new one (4/4, quarter notes selected).
+      open(score) {
+        notes = score ? score.notes.map((note) => ({ ...note })) : [];
+        time = score ? score.time : 4;
+        titleInput.value = score ? score.title : '';
+        selected = 'q';
+        update();
+      },
+      getScore: () => ({ title: title(), time, notes: notes.map((note) => ({ ...note })) }),
+      canSave,
+    };
+  }
+
+  window.Score = { draw, createEditor, splitMeasures, shownAccidentals, beamRoles, stemDirections };
 })();

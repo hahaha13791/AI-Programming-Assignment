@@ -169,7 +169,10 @@
     container.replaceChildren(svg);
   }
 
-  function create({ container, preview, sharpButton, flatButton, undoButton, clearButton, onChange }) {
+  // onPick(step, accidental): input-pad mode (score editor). A click hands the pitch over instead of adding a note
+  // here, and the preview note always sits in the middle. preview / undoButton / clearButton are then optional.
+  function create({ container, preview, sharpButton, flatButton, undoButton, clearButton, onChange, onPick }) {
+    const pad = Boolean(onPick);
     let notes = [];
     let accidental = 0;
     let hoverStep = null;
@@ -220,9 +223,11 @@
 
     function renderGhost() {
       ghostLayer.replaceChildren();
-      if (locked || hoverStep === null || notes.length >= capacity) return;
+      if (locked || hoverStep === null || (!pad && notes.length >= capacity)) return;
       const ghost = { step: hoverStep, accidental };
-      if (!chord) {
+      if (pad) {
+        drawNote(ghostLayer, chordX(geo), ghost);
+      } else if (!chord) {
         drawNote(ghostLayer, slotX(geo, notes.length), ghost);
       } else if (indexAtStep(hoverStep) === -1) {
         drawChord(ghostLayer, geo, [...notes, ghost], { only: notes.length });
@@ -235,6 +240,7 @@
     }
 
     function renderPreview() {
+      if (!preview) return;
       const order = notes.map((note, i) => i);
       if (chord) order.sort((a, b) => byPitch(notes[a], notes[b]));
       const slots = [];
@@ -257,8 +263,8 @@
       renderGhost();
       renderPreview();
       svg.classList.toggle('is-locked', locked);
-      undoButton.disabled = locked || notes.length === 0;
-      clearButton.disabled = locked || notes.length === 0;
+      if (undoButton) undoButton.disabled = locked || notes.length === 0;
+      if (clearButton) clearButton.disabled = locked || notes.length === 0;
       onChange?.();
     }
 
@@ -273,6 +279,10 @@
       if (locked) return;
       const step = stepAt(event);
       if (step === null) return;
+      if (pad) {
+        onPick(step, accidental);
+        return;
+      }
       const existing = chord ? indexAtStep(step) : -1;
       if (existing !== -1) {
         notes.splice(existing, 1);
@@ -298,12 +308,12 @@
 
     sharpButton.addEventListener('click', () => setAccidental(1));
     flatButton.addEventListener('click', () => setAccidental(-1));
-    undoButton.addEventListener('click', () => {
+    undoButton?.addEventListener('click', () => {
       if (locked) return;
       notes.pop();
       render();
     });
-    clearButton.addEventListener('click', () => {
+    clearButton?.addEventListener('click', () => {
       if (locked) return;
       notes = [];
       render();
