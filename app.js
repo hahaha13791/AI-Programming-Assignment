@@ -40,6 +40,15 @@ const MODES = {
       inputHard: '박자표를 고른 뒤, 들은 리듬을 음표 버튼으로 적어 보세요.',
     },
   },
+  score: {
+    subtitle: '기준음을 듣고, 내 악보를 오선에 받아 적어 보세요.',
+    arpeggio: false,
+    hints: {
+      ready: "먼저 '문제 듣기'로 기준음과 구간을 끝까지 들어 보세요.",
+      input: '들은 음을 오선에 순서대로 찍어 보세요. 리듬은 적지 않아요.',
+      empty: "저장된 악보가 없어요. '새 악보'로 만들어 보세요.",
+    },
+  },
 };
 
 let mode = 'melody';
@@ -60,7 +69,12 @@ function setMode(next) {
   $('app').dataset.mode = mode;
   $('subtitle').textContent = info.subtitle;
   $('chord-types').hidden = mode !== 'harmony';
-  updateLevelDescriptions();
+  const score = mode === 'score';
+  $('difficulty-title').textContent = score ? '악보' : '난이도';
+  $('score-picker').hidden = !score;
+  renderScoreNotice();
+  if (score) renderScorePicker();
+  else updateLevelDescriptions();
   $('btn-tonic').hidden = info.tonic === false;
   $('btn-arpeggio').hidden = !info.arpeggio;
   const rhythm = mode === 'rhythm';
@@ -94,6 +108,45 @@ let current = null; // the notes of the current question; rhythm mode: { time, m
 let chord = null; // harmony mode: the current chord ({ notes, name, ... })
 let submitted = false;
 let unlockTimer = null;
+
+// 내 악보: scores saved in this browser, and the one being practised.
+const scores = Scores.open();
+let scoreId = scores.list()[0]?.id ?? null;
+
+function renderScoreNotice() {
+  const notice = mode === 'score' ? scores.notice() : null;
+  $('score-notice').hidden = !notice;
+  $('score-notice').textContent = notice ?? '';
+}
+
+function renderScorePicker() {
+  const list = scores.list();
+  const select = $('score-select');
+  select.replaceChildren(...list.map((score) => {
+    const option = document.createElement('option');
+    option.value = score.id;
+    option.textContent = score.title;
+    return option;
+  }));
+  select.disabled = !list.length;
+  if (scoreId) select.value = scoreId;
+  // The editor opens in stage 23.
+  $('btn-new-score').disabled = true;
+  $('btn-edit-score').disabled = true;
+}
+
+// Until sections are split (stage 24): the score's first two measures, at most eight notes, rests left out.
+function firstSection(score) {
+  const end = score.time * 2 * 2;
+  const notes = [];
+  let filled = 0;
+  for (const note of score.notes) {
+    if (filled >= end) break;
+    if (!Rhythm.TYPES[note.type].rest) notes.push({ step: note.step, accidental: note.accidental });
+    filled += Rhythm.TYPES[note.type].length;
+  }
+  return notes.slice(0, 8);
+}
 
 const staff = Staff.create({
   container: $('staff-area'),
@@ -154,12 +207,16 @@ function newQuestion() {
       time: hard ? null : current.time[0],
       measures: hard ? null : current.measures.length,
     });
+  } else if (mode === 'score') {
+    const score = scoreId && scores.get(scoreId);
+    current = score ? firstSection(score) : null;
+    staff.reset(current ? current.length : 0, { topStep: HARMONY_TOP_STEP });
   } else {
     current = pick(PATTERNS[level], current);
     staff.reset(current.length);
   }
-  $('btn-question').disabled = false;
-  setHint('ready');
+  $('btn-question').disabled = !current;
+  setHint(current ? 'ready' : 'empty');
 }
 
 function element(tag, className, text) {
@@ -228,8 +285,9 @@ function renderResult(result) {
     parts.push(element('p', 'score', correct === marks.length
       ? `${marks.length}음 모두 정답이에요!`
       : `${marks.length}음 중 ${correct}음 정답`));
-    parts.push(element('h3', 'answer-title', '정답 멜로디'));
-    Staff.draw(answerStaff, current, '정답 멜로디 오선');
+    const what = mode === 'score' ? '구간' : '멜로디';
+    parts.push(element('h3', 'answer-title', `정답 ${what}`));
+    Staff.draw(answerStaff, current, `정답 ${what} 오선`);
     parts.push(answerStaff, chipsOf(current));
   }
 
@@ -359,6 +417,11 @@ for (const button of document.querySelectorAll('.chord-type')) {
     if (button.dataset.type !== chordType) setChordType(button.dataset.type);
   });
 }
+
+$('score-select').addEventListener('change', (event) => {
+  scoreId = event.target.value;
+  newQuestion();
+});
 
 for (const tab of document.querySelectorAll('.mode-tab')) {
   tab.addEventListener('click', () => {

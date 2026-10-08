@@ -17,6 +17,7 @@
       <button type="button" class="mode-tab" role="tab" aria-selected="true" data-mode="melody">멜로디</button>
       <button type="button" class="mode-tab" role="tab" aria-selected="false" data-mode="harmony">화성</button>
       <button type="button" class="mode-tab" role="tab" aria-selected="false" data-mode="rhythm">리듬</button>
+      <button type="button" class="mode-tab" role="tab" aria-selected="false" data-mode="score">내 악보</button>
     </div>
 
     <section class="panel" aria-labelledby="difficulty-title">
@@ -26,20 +27,32 @@
           <button type="button" class="chord-type" role="radio" aria-checked="true" data-type="triad">3화음</button>
           <button type="button" class="chord-type" role="radio" aria-checked="false" data-type="seventh">7화음</button>
         </div>
+        <p class="score-notice" id="score-notice" role="status" hidden></p>
       </div>
-      <div class="difficulty" role="radiogroup" aria-label="난이도 선택">
-        <button type="button" class="difficulty-option" role="radio" aria-checked="true" data-level="easy">
-          <span class="difficulty-name">쉬움</span>
-          <span class="difficulty-desc">3~4음</span>
-        </button>
-        <button type="button" class="difficulty-option" role="radio" aria-checked="false" data-level="medium">
-          <span class="difficulty-name">중간</span>
-          <span class="difficulty-desc">5~6음</span>
-        </button>
-        <button type="button" class="difficulty-option" role="radio" aria-checked="false" data-level="hard">
-          <span class="difficulty-name">어려움</span>
-          <span class="difficulty-desc">7~8음</span>
-        </button>
+      <div class="level-area">
+        <div class="difficulty" role="radiogroup" aria-label="난이도 선택">
+          <button type="button" class="difficulty-option" role="radio" aria-checked="true" data-level="easy">
+            <span class="difficulty-name">쉬움</span>
+            <span class="difficulty-desc">3~4음</span>
+          </button>
+          <button type="button" class="difficulty-option" role="radio" aria-checked="false" data-level="medium">
+            <span class="difficulty-name">중간</span>
+            <span class="difficulty-desc">5~6음</span>
+          </button>
+          <button type="button" class="difficulty-option" role="radio" aria-checked="false" data-level="hard">
+            <span class="difficulty-name">어려움</span>
+            <span class="difficulty-desc">7~8음</span>
+          </button>
+        </div>
+        <!-- 내 악보: drawn over the difficulty buttons, which stay in place (invisible) to keep the panel's height. -->
+        <div class="score-picker" id="score-picker" hidden>
+          <div class="score-row">
+            <select class="score-select" id="score-select" aria-label="악보 고르기"></select>
+            <button type="button" class="btn btn-small" id="btn-new-score">새 악보</button>
+            <button type="button" class="btn btn-small" id="btn-edit-score">편집</button>
+          </div>
+          <div class="section-chips" id="section-chips" role="radiogroup" aria-label="구간"></div>
+        </div>
       </div>
     </section>
 
@@ -89,6 +102,7 @@
   <script src="chords.js"></script>
   <script src="rhythm.js"></script>
   <script src="rhythms.js"></script>
+  <script src="scores.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

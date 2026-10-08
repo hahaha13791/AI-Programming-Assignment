@@ -156,7 +156,7 @@ button:focus-visible {
 
 .mode-tabs {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: var(--space-1);
   padding: var(--space-1);
   background: var(--border);
@@ -280,6 +280,71 @@ button:focus-visible {
 .difficulty-desc {
   font-size: var(--fs-sm);
   color: var(--text-muted);
+}
+
+/* 내 악보: the score picker covers the difficulty buttons, which stay (invisible) to hold the panel's height. */
+.level-area {
+  position: relative;
+}
+
+.app[data-mode="score"] .difficulty {
+  visibility: hidden;
+}
+
+.score-picker {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  gap: 6px;
+}
+
+.score-row {
+  display: flex;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.score-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.score-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.btn-small {
+  flex: none;
+  min-height: 0;
+  font-size: var(--fs-sm);
+}
+
+/* Section chips scroll sideways rather than wrap, so any number of them keeps the panel's height. */
+.section-chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.score-notice {
+  margin: 0;
+  max-width: 70%;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  color: var(--missed);
+  text-align: right;
 }
 
 .playback {
