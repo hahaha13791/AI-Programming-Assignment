@@ -436,6 +436,72 @@ button:focus-visible {
   color: var(--wrong);
 }
 
+/* Score view (내 악보): pitch and rhythm on a five-line staff. Notes use currentColor so a measure's mark
+   colours it; staff lines and barlines stay in the text colour. */
+.score-view {
+  display: block;
+  width: 100%;
+  height: auto;
+  color: var(--text);
+}
+
+.sv-line,
+.sv-bar,
+.sv-ledger {
+  stroke: var(--text);
+  stroke-width: 1.2;
+}
+
+.sv-bar-end {
+  fill: var(--text);
+}
+
+.sv-current {
+  fill: var(--accent-soft);
+}
+
+.sv-time {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 30px;
+  font-weight: 700;
+  text-anchor: middle;
+  fill: var(--text);
+}
+
+.sv-fill {
+  fill: currentColor;
+}
+
+.sv-open {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+}
+
+.sv-whole {
+  stroke-width: 2.4;
+}
+
+.sv-stem {
+  stroke: currentColor;
+  stroke-width: 1.4;
+}
+
+.sv-rest {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sv-accidental {
+  font-family: "Segoe UI Symbol", "Noto Music", serif;
+  font-size: 17px;
+  text-anchor: end;
+  fill: currentColor;
+}
+
 .rhythm-progress {
   margin-bottom: 0;
   color: var(--text-muted);

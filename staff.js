@@ -333,5 +333,5 @@
     };
   }
 
-  window.Staff = { create, draw, noteLabel, noteToMidi, parseNotes };
+  window.Staff = { create, draw, noteLabel, noteToMidi, parseNotes, stepY, HALF_GAP };
 })();
