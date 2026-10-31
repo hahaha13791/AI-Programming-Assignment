@@ -142,8 +142,6 @@
     return out;
   }
 
-  const hasRepeats = (measure) => Boolean(measure.repeatStart || measure.repeatEnd || measure.ending || measure.marks);
-
   // ---- validation ----
   const isInt = (value, min, max) => Number.isInteger(value) && value >= min && value <= max;
 
@@ -368,9 +366,9 @@
     };
   }
 
-  // ---- the editor's (v1) format ----
+  // ---- the expansion 4 (v1) format, for scores saved before expansion 5 ----
   // v1 = { id, title, time (beats of x/4), notes: [{ type: Rhythm.TYPES key, step: 0 (C4) .. 11 (G5), accidental }] }.
-  // Until the editor grows (expansion 7) it works on v1, so scores within its range are converted both ways.
+  // Scores.open() moves them over; nothing writes v1 any more (the editor works on v2 from expansion 7).
   const LEGACY_TYPES = {
     w: { type: 'whole', dots: 0 },
     'h.': { type: 'half', dots: 1 },
@@ -381,8 +379,6 @@
     r: { type: 'quarter', dots: 0, rest: true },
   };
   const LEGACY_TEMPO = 80;
-  const LEGACY_MAX_MEASURES = 12;
-  const LEGACY_TOP_STEP = 11;
 
   function fromLegacy(legacy) {
     const eighths = legacy.time * 2;
@@ -400,68 +396,6 @@
     }
     measures[0] = { time: [legacy.time, 4], key: { fifths: 0, mode: 'major' }, clef: 'treble', tempo: LEGACY_TEMPO, notes: measures[0].notes };
     return { id: legacy.id, title: legacy.title, pickup: false, measures };
-  }
-
-  // Why the editor can't take this score, or null if it can. The first reason found, for the notice.
-  function legacyProblem(score) {
-    if (score.pickup) return '못갖춘마디';
-    if (score.firstNumber !== undefined && score.firstNumber !== 1) return '마디 번호';
-    if (score.measures.length > LEGACY_MAX_MEASURES) return `${LEGACY_MAX_MEASURES + 1}마디 이상`;
-    const measures = resolve(score);
-    const first = measures[0];
-    for (const measure of measures) {
-      if (measure.key.fifths !== 0 || measure.key.mode !== 'major') return '조표·단조';
-      if (measure.clef !== 'treble') return CLEF_NAMES[measure.clef];
-      if (measure.endClef !== 'treble') return CLEF_NAMES[measure.endClef];
-      if (measure.timeSymbol) return '박자 기호';
-      if (measure.implicit) return '번호 없는 마디';
-      if (hasRepeats(measure)) return '도돌이표';
-      if (measure.barline) return '겹세로줄·끝세로줄';
-      if (measure.time[1] !== 4 || ![2, 3, 4].includes(measure.time[0]) || measure.time[0] !== first.time[0]) {
-        return '박자';
-      }
-      if (measure.tempo !== LEGACY_TEMPO) return '빠르기';
-      if (cmp(filled(measure.notes), measureLength(measure.time)) !== 0) return '덜 찬 마디';
-      for (const note of measure.notes) {
-        if (note.tie) return '붙임줄';
-        if (note.tuplet) return '잇단음표';
-        if (note.chord) return '화음';
-        if (note.grace) return '꾸밈음';
-        if (note.tempo !== undefined) return '마디 중간 빠르기 바뀜';
-        if (!legacyType(note)) return '음표 길이';
-        if (!note.rest) {
-          if (Math.abs(note.pitch.alter) > 1) return '겹임시표';
-          const step = legacyStep(note.pitch);
-          if (step < 0 || step > LEGACY_TOP_STEP) return '음역';
-        }
-      }
-    }
-    return null;
-  }
-
-  const CLEF_NAMES = {
-    bass: '낮은음자리표', alto: '알토 음자리표', tenor: '테너 음자리표', 'treble-8vb': '옥타브 음자리표', 'treble-8va': '옥타브 음자리표',
-    'bass-8vb': '옥타브 음자리표', 'bass-8va': '옥타브 음자리표',
-  };
-
-  function legacyType(note) {
-    return Object.keys(LEGACY_TYPES).find((key) => {
-      const info = LEGACY_TYPES[key];
-      return info.type === note.type && info.dots === (note.dots ?? 0) && Boolean(info.rest) === Boolean(note.rest);
-    });
-  }
-
-  function legacyStep(pitch) {
-    return STEPS.indexOf(pitch.step) + 7 * (pitch.octave - 4);
-  }
-
-  function toLegacy(score) {
-    if (!score || legacyProblem(score)) return null;
-    const measures = resolve(score);
-    const notes = measures.flatMap((measure) => measure.notes).map((note) => (note.rest
-      ? { type: 'r' }
-      : { type: legacyType(note), step: legacyStep(note.pitch), accidental: note.pitch.alter }));
-    return { id: score.id, title: score.title, time: measures[0].time[0], notes };
   }
 
   // ---- compact text for scores written in code (examples, tests) ----
@@ -535,7 +469,7 @@
     frac, add, sub, mul, cmp, toNumber, ZERO,
     duration, midi, pitchesOf, lineOf, tieStarts, tieStops, hasChords, measureLength, filled, resolve,
     isValid, clean, excerpt, repeatsOf,
-    fromLegacy, toLegacy, legacyProblem,
+    fromLegacy,
     parseMeasures, build,
   };
 })();

@@ -84,7 +84,6 @@ T.test('27-2 v1 → v2', async (T) => {
   T.check(eq(N.clean(N.fromLegacy(v1Twinkle())), twinkle), 'v1 반짝반짝 작은 별을 바꾸면 v2 예시와 같음');
   const rich = N.clean(N.fromLegacy(V1_RICH));
   T.check(N.isValid(rich), '임시표·쉼표·점음표가 든 v1 악보가 올바른 v2가 됨');
-  T.check(eq(N.toLegacy(rich), V1_RICH), 'v2를 다시 v1로 바꾸면 처음과 같음 (음높이·길이·박자)');
   const midis = rich.measures.flatMap((mm) => mm.notes).filter((n) => !n.rest).map((n) => N.midi(n.pitch));
   const v1Midis = V1_RICH.notes.filter((n) => n.type !== 'r').map(Staff.noteToMidi);
   T.check(eq(midis, v1Midis), `음높이가 같음 (${midis.join(' ')})`);
@@ -154,24 +153,18 @@ T.test('27-4 예시 악보', async (T) => {
   T.check(king.measures[0].clef === 'bass' && king.measures[0].key.fifths === 2 && king.measures[0].key.mode === 'minor'
     && all(king).some((n) => n.pitch && n.pitch.step === 'E' && n.pitch.alter === 1)
     && all(king).some((n) => n.pitch && n.pitch.step === 'C' && n.pitch.alter === 0), '산왕의 궁전: 낮은음자리표·나단조(♯2)·E♯·C♮');
-  T.check(Notation.toLegacy(get('example-twinkle')) !== null, '반짝반짝 작은 별은 지금 편집기 범위');
-  T.check(['example-fur-elise', 'example-greensleeves', 'example-mountain-king'].every((id) => Notation.legacyProblem(get(id))),
-    '새 예시는 편집기 범위 밖');
 });
 
 T.test('27-6 반짝반짝 작은 별: 확장 4와 같음', async (T) => {
   T.setMode('score');
   T.check(scoreId === 'example-twinkle', '처음 고른 악보는 반짝반짝 작은 별');
-  const old = Score.sections(v1Twinkle()).map((item) => ({ ...item, time: 4 }));
-  // From TODO 31 sections are chosen on the strip; the default (first two measures) is expansion 4's first section.
-  // From TODO 32/33 the section is v2 (its pitches and an excerpt to draw); its measures and pitches are expansion 4's.
-  const oldPitches = old[0].notes.filter((n) => n.type !== 'r').map(Staff.noteToMidi);
-  T.check(section.start === old[0].start && section.end === old[0].end && section.label === old[0].label
-    && eq(current.map(Notation.midi), oldPitches), `기본 구간이 확장 4의 첫 구간과 같음 (${section.label})`);
+  // Expansion 4's first section, as it played then (its own v1 player was removed in TODO 48): measures 1~2,
+  // 도 도 솔 솔 | 라 라 솔, a quarter every 0.75 s (♩= 80).
+  T.check(section.start === 0 && section.end === 1 && section.label === '1~2마디'
+    && eq(current.map(Notation.midi), [60, 60, 67, 67, 69, 69, 67]), `기본 구간이 확장 4의 첫 구간과 같음 (${section.label})`);
   const v2 = Playback.schedule(scores.get(scoreId), { start: section.start, end: section.end, tonic: false });
-  const v1 = Score.schedule(old[0].notes, { tonic: false });
-  T.check(v2.events.length === v1.events.length && v2.events.every((e, i) => Math.abs(e.start - v1.events[i].start) < 1e-9
-    && e.midi === v1.events[i].midi), '재생 시각·음높이가 확장 4와 같음');
+  T.check(eq(v2.events.map((e) => e.midi), [60, 60, 67, 67, 69, 69, 67]) && v2.events.every((e, i) => Math.abs(e.start - 0.75 * i) < 1e-9),
+    '재생 시각·음높이가 확장 4와 같음 (4분음표마다 0.75초)');
   T.check(await T.listen(), '재생 후 입력 풀림');
   T.enterNotes(current);
   T.submit();

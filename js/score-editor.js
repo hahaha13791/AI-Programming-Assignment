@@ -84,8 +84,33 @@
   }
 
   // elements: { title, view, status, undo, redo, tabs, tools: { notes, measure, signs } }. onChange: after any change.
-  function create({ title, view, status, undo, redo, tabs, tools, onChange = () => {} }) {
+  function create({ title, view, status, undo, redo, play, tabs, tools, speed = () => 1, onChange = () => {} }) {
     let state = null;
+    let playTimer = null;
+
+    // [듣기 | 멈춤] (PRD #4-H-5): from the cursor's measure to the end, as the practice screen plays it (no tonic).
+    function stopPlaying() {
+      clearTimeout(playTimer);
+      playTimer = null;
+      if (play.dataset.playing !== undefined) Sound.stop();
+      delete play.dataset.playing;
+      play.textContent = '듣기';
+    }
+
+    play.disabled = false;
+    play.addEventListener('click', () => {
+      if (!state) return;
+      if (play.dataset.playing !== undefined) {
+        stopPlaying();
+        return;
+      }
+      const score = { ...state.score, id: 'edit', title: 'edit' };
+      const { events, total } = Playback.schedule(score, { start: state.cursor.measure, end: score.measures.length - 1, tonic: false, speed: speed() });
+      const length = Sound.playEvents(events, total);
+      play.dataset.playing = '';
+      play.textContent = '멈춤';
+      playTimer = setTimeout(stopPlaying, length * 1000);
+    });
     // The length to write, the ♯/♭/♮ toggle, and what a pitch does: write a note, add to the chord or a grace note.
     const input = { type: 'quarter', dots: 0, toggle: null, mode: 'note' };
 
@@ -529,6 +554,7 @@
     }
 
     function close() {
+      stopPlaying();
       state = null;
       view.replaceChildren();
     }
@@ -616,7 +642,7 @@
     }
 
     return {
-      open, close, apply, render, key, showTab, input,
+      open, close, apply, render, key, showTab, input, stopPlaying,
       get state() { return state; },
       canSave: () => Boolean(state?.canSave()),
       result: () => state?.result() ?? null,

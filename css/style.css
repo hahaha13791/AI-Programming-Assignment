@@ -737,13 +737,6 @@ button:focus-visible {
 
 /* Score view (내 악보): pitch and rhythm on a five-line staff. Notes use currentColor so a measure's mark
    colours it; staff lines and barlines stay in the text colour. */
-.score-view {
-  display: block;
-  width: 100%;
-  height: auto;
-  color: var(--text);
-}
-
 .sv-line,
 .sv-bar,
 .sv-ledger {

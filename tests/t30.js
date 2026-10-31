@@ -71,15 +71,16 @@ T.test('30-2 반짝반짝 작은 별은 확장 4와 같게', async (T) => {
   T.setMode('score');
   const spy = spyPlay();
   T.check(await T.listen(), '재생 후 입력 풀림');
-  // Expansion 4 played the same measures from its own (v1) notes.
-  const legacy = Notation.toLegacy(scores.get(scoreId));
-  const oldNotes = Score.splitMeasures(legacy.notes, legacy.time).slice(section.start, section.end + 1).flat();
-  const old = Score.schedule(oldNotes, { tonic: true });
+  // Expansion 4 played the tonic C4, then (after LEAD_IN) the section a quarter every 0.75 s, each sounding 90%
+  // (도 도 솔 솔 라 라 in quarters, 솔 a half).
+  // (Its own v1 player was removed in TODO 48; these are the times it gave.)
   const got = spy.calls[0];
   spy.restore();
-  const same = got && got.events.length === old.events.length && got.events.every((e, i) =>
-    near(e.start, old.events[i].start) && near(e.length, old.events[i].length) && e.midi === old.events[i].midi);
-  T.check(same && near(got.total, old.total), '원래 빠르기에서 확장 4의 재생 예약과 같음 (기준음 C4 포함)');
+  const notes = got.events.slice(1);
+  const same = got && got.events[0].midi === 60 && near(got.events[0].start, 0)
+    && notes.map((e) => e.midi).join() === '60,60,67,67,69,69,67'
+    && notes.every((e, i) => near(e.start, Playback.LEAD_IN + 0.75 * i) && near(e.length, (i === 6 ? 1.5 : 0.75) * Playback.NOTE_SHARE)); // the last 솔 is a half note
+  T.check(same, '원래 빠르기에서 확장 4의 재생 예약과 같음 (기준음 C4 포함)');
   T.setMode('melody');
 });
 

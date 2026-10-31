@@ -56,7 +56,6 @@
     bad((ms) => { ms[3].marks[0].text = 'x'.repeat(N.MAX_MARK + 1); }, '너무 긴 글자는 걸러짐');
     bad((ms) => { ms[0].repeatStart = 'yes'; }, '도돌이표 값이 true가 아니면 걸러짐');
     const plain = build('C5:w | D5:w', { 0: { repeatStart: true }, 1: { repeatEnd: true } });
-    T.check(N.legacyProblem({ ...plain, measures: plain.measures.map((m, i) => (i ? m : { ...m, tempo: 80 })) }) === '도돌이표', '편집기가 다룰 수 없는 이유: 도돌이표');
     const ex = N.excerpt(s, 3, 3);
     T.check(ex.measures[0].ending?.end === 'open' && ex.measures[0].marks?.length === 1, '구간(정답 악보)에도 그 마디의 괄호·기호가 남음');
   });

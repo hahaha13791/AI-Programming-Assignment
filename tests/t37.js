@@ -62,8 +62,6 @@
       '다음 마디는 바뀐 음자리표·빠르기로 시작');
     const split80 = N.build({ ...BASE, tempo: 80, clef: 'treble', time: [4, 4], music: 'C5:w | D5:w | E5:h' });
     split80.measures[2].implicit = true;
-    T.check(N.legacyProblem(midClef) === '낮은음자리표' && N.legacyProblem(split80) === '번호 없는 마디' && N.legacyProblem(build('C4:w', { clef: 'alto' })) === '알토 음자리표',
-      `편집기가 다룰 수 없는 이유 (${N.legacyProblem(midClef)} / ${N.legacyProblem(split80)})`);
     // Compatibility: the examples and what earlier stages stored still read the same.
     T.check(EXAMPLE_SCORES.every((s) => N.isValid(s)), '예시 악보가 모두 그대로 올바름');
     const greens = EXAMPLE_SCORES.find((s) => s.id === 'example-greensleeves');

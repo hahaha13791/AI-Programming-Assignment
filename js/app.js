@@ -163,6 +163,8 @@ const scoreEditor = ScoreEditor.create({
   status: $('editor-status'),
   undo: $('editor-undo'),
   redo: $('editor-redo'),
+  play: $('editor-play'),
+  speed: () => Settings.get('speed'),
   tabs: $('editor-tabs'),
   tools: { notes: $('editor-tool-notes'), measure: $('editor-tool-measure'), signs: $('editor-tool-signs') },
   onChange: () => {

@@ -31,7 +31,6 @@
     T.check(!N.isValid(score([[chord('h', 'C4 E4~ G4'), chord('h', 'D4 F4 A4')]])), '이어질 같은 음이 없는 붙임줄은 걸러짐');
     T.check(N.lineOf(tied.measures[0].notes[0], 'top').pitch.step === 'G' && N.lineOf(tied.measures[0].notes[0], 'bottom').pitch.step === 'C', '맨 위 음·맨 아래 음');
     T.check(N.hasChords(tied) && !N.hasChords(EXAMPLE_SCORES[0]), '화음이 든 악보인지');
-    T.check(N.legacyProblem({ ...tied, measures: [{ ...tied.measures[0], tempo: 80 }, ...tied.measures.slice(1)] }) === '화음', '편집기가 다룰 수 없는 이유: 화음');
     T.check(JSON.stringify(N.clean(tied).measures[0].notes[0].chord) === JSON.stringify([{ pitch: P('E4'), tie: 'start' }, { pitch: P('G4') }]), '저장할 때 화음의 음과 붙임줄이 남음');
   });
 

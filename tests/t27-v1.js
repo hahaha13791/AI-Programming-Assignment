@@ -24,7 +24,8 @@ T.test('27-6 옮겨 온 악보 편집·저장', async (T) => {
   const stored = JSON.parse(localStorage.getItem(Scores.STORAGE_KEY) || 'null');
   T.check(Array.isArray(stored) && stored.length === scores.list().length && stored.every(Notation.isValid), '저장하면 목록 전체가 v2로 쓰임');
   const old = stored.find((s) => s.id === 'old-1');
-  T.check(old && JSON.stringify(Notation.toLegacy(old).notes) === JSON.stringify(JSON.parse(localStorage.getItem(Scores.V1_KEY))[0].notes),
+  const v1 = JSON.parse(localStorage.getItem(Scores.V1_KEY))[0];
+  T.check(old && JSON.stringify(old.measures) === JSON.stringify(Notation.clean(Notation.fromLegacy(v1)).measures),
     '편집기로 다시 저장해도 음은 그대로');
   T.check(localStorage.getItem(Scores.V1_KEY) !== null, 'v1 값은 지우지 않음');
 });

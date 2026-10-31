@@ -19,7 +19,6 @@
     bad((ns) => { ns[1] = { type: 'eighth', dots: 0, rest: true, grace: true }; }, '꾸밈 쉼표는 걸러짐');
     bad((ns) => { ns[1].tie = 'start'; }, '꾸밈음 붙임줄은 걸러짐');
     bad((ns) => { ns[0].slash = true; }, '꾸밈음이 아닌 음의 사선은 걸러짐');
-    T.check(N.legacyProblem({ ...s, measures: [{ ...s.measures[0], tempo: 80 }, s.measures[1]] }) === '꾸밈음', '편집기가 다룰 수 없는 이유: 꾸밈음');
     T.check(N.clean(s).measures[0].notes[1].grace === true && N.clean(s).measures[0].notes[1].slash === true, '저장할 때 꾸밈음·사선이 남음');
     const inTuplet = build('3[ C5:8 gD5:16 E5:8 F5:8 ] G5:q A5:h');
     T.check(N.isValid(inTuplet), '잇단음표 묶음 안의 꾸밈음도 올바름');

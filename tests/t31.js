@@ -106,7 +106,7 @@ T.test('31-4 다음 구간·쉼표만 있는 구간', async (T) => {
   // Quarter rests only, so the expansion 4 editor range (practisable before TODO 33).
   const rests = N31.build({ id: 'rests31', title: '쉼표 시험', ...BASE31,
     music: 'C5:w | r:q r:q r:q r:q | r:q r:q r:q r:q | D5:w | E5:h E5:h | F5:h F5:h' });
-  T.check(N31.isValid(rests) && !N31.legacyProblem(rests), '쉼표 시험 악보가 올바르고 지금 연습할 수 있음');
+  T.check(N31.isValid(rests), '쉼표 시험 악보가 올바름');
   scores.save(rests);
   renderScorePicker();
   chooseScore('rests31');
