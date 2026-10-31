@@ -139,7 +139,6 @@ T.test('36-2 변환 결과', async (T) => {
     T.check(message.includes(expected), `${label}: "${message}"`);
   };
   const one = (body, a = attrs({ key: 0, time: [4, 4], clef: G_CLEF() })) => score36([{ name: 'X', measures: [a + body] }]);
-  refuse(one(n('C5', 24) + n('E5', 24, { chord: true }) + n('G5', 24)), '화음', '화음 (38단계)');
   refuse(one(n('D5', 0, { grace: true }) + n('C5', 48)), '꾸밈음', '꾸밈음 (39단계)');
   refuse(one(n('C5', 48)).replace('</measure>', '<barline location="right"><repeat direction="backward"/></barline></measure>'), '도돌이표', '도돌이표 (40단계)');
   refuse(one(n('C5', 48), attrs({ key: 0, time: [4, 4], clef: G_CLEF() }).replace('<beats>4</beats>', '<beats>3+2</beats>')), '혼합 박자', '혼합 박자');
@@ -207,8 +206,9 @@ T.test('36-4 불러오기와 연습 한 사이클', async (T) => {
 
   // A line that can't be brought in yet: the reason in the box, nothing stored.
   const count = scores.list().length;
-  await importThroughBox(score36([{ name: 'X', measures: [attrs({ key: 0, time: [4, 4], clef: G_CLEF() }) + n('C5', 48) + n('E5', 48, { chord: true })] }]), 'chord.musicxml');
-  T.check(!T.$('new-score').hidden && T.$('import-status').textContent.includes('화음') && T.$('import-status').classList.contains('is-error') && scores.list().length === count,
+  // (38단계부터 화음은 담으므로, 아직 담지 못하는 예는 꾸밈음(39단계)으로 바꿈.)
+  await importThroughBox(score36([{ name: 'X', measures: [attrs({ key: 0, time: [4, 4], clef: G_CLEF() }) + n('D5', 0, { grace: true }) + n('C5', 48)] }]), 'grace.musicxml');
+  T.check(!T.$('new-score').hidden && T.$('import-status').textContent.includes('꾸밈음') && T.$('import-status').classList.contains('is-error') && scores.list().length === count,
     `담지 못하는 표기는 창에 이유 (${T.$('import-status').textContent}), 저장 없음`);
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 });

@@ -8,7 +8,7 @@
 기대값은 앱 코드와 따로 여기서 계산한다.
 - lines: 파트·보표·성부별 음 개수(화음은 한 번, 꾸밈음 포함) — 35단계 목록 확인
 - sounds: 성부마다 실제로 울리는 음 [실음 MIDI, 시작, 길이] (시작·길이는 온음표 기준 분수 "n/d", 붙임줄로 이은 음은
-  하나로 합침) — 36단계 변환 확인. 앱이 불러올 수 있는 성부만 비교한다.
+  음높이마다 하나로 합침, 화음의 음도 모두, 시작·음높이 순) — 36·38단계 변환 확인. 앱이 불러올 수 있는 성부만 비교한다.
 """
 import base64, json, pathlib, urllib.request, zipfile
 import xml.etree.ElementTree as ET
@@ -53,6 +53,7 @@ def analyse(root):
         events = {k: [] for k in keys}
         for measure in part.findall('measure'):
             cursor = previous = length = Fraction(0)
+            head_key = None
             for el in measure:
                 if el.tag == 'attributes':
                     if el.findtext('divisions'):
@@ -71,8 +72,11 @@ def analyse(root):
                     if not chord:
                         previous = cursor
                         cursor += dur
-                    key = (int(el.findtext('staff') or 1), el.findtext('voice') or '1')
-                    if key in events and not chord and not grace:
+                    # A chord's other notes belong to their head's line, even on the other staff.
+                    key = head_key if chord else (int(el.findtext('staff') or 1), el.findtext('voice') or '1')
+                    if not chord:
+                        head_key = key
+                    if key in events and not grace:
                         pitch = el.find('pitch')
                         midi = None
                         if pitch is not None:
@@ -88,19 +92,19 @@ def analyse(root):
             offset += length if length > 0 else Fraction(beats, beat_type)
         sounds = []
         for k in keys:
-            out, last = [], None
-            for midi, start, dur, tie_start, tie_stop in events[k]:
-                if midi is None:
-                    last = None
-                    continue
-                joined = (last is not None and tie_stop and last[3] and last[0] == midi
-                          and last[1] + last[2] == start)
-                if joined:
-                    out[-1][2] += dur
-                    last = [midi, start, dur, tie_start]
+            # Each pitch on its own: a tie joins it to the same pitch starting right where it ends.
+            out, waiting = [], {}  # waiting: midi -> the sound its tie carries on
+            for midi, start, dur, tie_start, tie_stop in sorted((e for e in events[k] if e[0] is not None), key=lambda e: (e[1], e[0])):
+                held = waiting.pop(midi, None)
+                if tie_stop and held is not None and held[1] + held[2] == start:
+                    held[2] += dur
+                    sound = held
                 else:
-                    out.append([midi, start, dur])
-                    last = [midi, start, dur, tie_start]
+                    sound = [midi, start, dur]
+                    out.append(sound)
+                if tie_start:
+                    waiting[midi] = sound
+            out.sort(key=lambda x: (x[1], x[0]))
             sounds.append([f'{m}@{frac_text(s)}+{frac_text(d)}' for m, s, d in out])
         parts.append({'lines': [[s, v, counts[(s, v)]] for s, v in keys], 'sounds': sounds})
     return {'parts': [p['lines'] for p in parts], 'sounds': [p['sounds'] for p in parts], 'skipped': skipped}

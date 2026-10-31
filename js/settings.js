@@ -63,5 +63,30 @@
     }
   }
 
-  window.Settings = { get, set, getSection, setSection, STORAGE_KEY, SECTIONS_KEY, DEFAULTS, ALLOWED };
+  // 내 악보 with chords: which line of each score is written down, 'top' (the default) or 'bottom'.
+  const LINES_KEY = 'ltw.lines.v1';
+  let lines = {};
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(LINES_KEY) || '{}');
+    if (parsed && typeof parsed === 'object') lines = parsed;
+  } catch {
+    lines = {};
+  }
+
+  function getLine(id) {
+    return lines[id] === 'bottom' ? 'bottom' : 'top';
+  }
+
+  function setLine(id, value) {
+    if (!['top', 'bottom'].includes(value)) return false;
+    lines = { ...lines, [id]: value };
+    try {
+      window.localStorage.setItem(LINES_KEY, JSON.stringify(lines));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  window.Settings = { get, set, getSection, setSection, getLine, setLine, STORAGE_KEY, SECTIONS_KEY, LINES_KEY, DEFAULTS, ALLOWED };
 })();

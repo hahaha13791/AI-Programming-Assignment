@@ -78,22 +78,25 @@
     return signs;
   }
 
-  // Standard accidentals within a measure: a sign only where a note differs from what its line/space already
-  // means (the key signature, or an earlier accidental on the same line/space in this measure). A note tied over
-  // from the previous measure gets none. Returns per note: an alter to show, or null.
-  function shownAccidentals(notes, key) {
+  // Standard accidentals within a measure: a sign only where a pitch differs from what its line/space already
+  // means (the key signature, or an earlier accidental on the same line/space in this measure). A pitch tied over
+  // from the previous measure gets none. Returns per note, per pitch (N.pitchesOf order): an alter to show, or null.
+  function headAccidentals(notes, key) {
     const fromKey = keyAlters(key);
     const state = {};
-    return notes.map((note, i) => {
-      if (note.rest) return null;
-      const name = `${note.pitch.step}${note.pitch.octave}`;
-      const expected = state[name] ?? fromKey[note.pitch.step] ?? 0;
-      // A note tied over the barline shows nothing, and its accidental doesn't carry on to later notes.
-      const tiedOver = i === 0 && (note.tie === 'stop' || note.tie === 'both');
-      if (tiedOver) return null;
-      state[name] = note.pitch.alter;
-      return note.pitch.alter === expected ? null : note.pitch.alter;
-    });
+    return notes.map((note, i) => N.pitchesOf(note).map(({ pitch, tie }) => {
+      const name = `${pitch.step}${pitch.octave}`;
+      const expected = state[name] ?? fromKey[pitch.step] ?? 0;
+      // A pitch tied over the barline shows nothing, and its accidental doesn't carry on to later notes.
+      if (i === 0 && N.tieStops(tie)) return null;
+      state[name] = pitch.alter;
+      return pitch.alter === expected ? null : pitch.alter;
+    }));
+  }
+
+  // The written pitch's accidental per note (null for none or a rest).
+  function shownAccidentals(notes, key) {
+    return headAccidentals(notes, key).map((list) => list[0] ?? null);
   }
 
   function svgEl(name, attrs, text) {
@@ -106,9 +109,36 @@
   const FLAGS = { eighth: 1, '16th': 2, '32nd': 3, '64th': 4 };
   const OPEN = { whole: true, half: true };
 
-  function stemOf(note, pos) {
+  // The head furthest from the middle line decides the stem: on or above the middle line, down; below, up.
+  const farHead = (top, bottom) => (top - MIDDLE >= MIDDLE - bottom ? top : bottom);
+  function stemOf(note, top, bottom) {
     if (note.rest || note.type === 'whole') return 0;
-    return pos >= MIDDLE ? -1 : 1;
+    return farHead(top, bottom) >= MIDDLE ? -1 : 1;
+  }
+
+  const HEAD_W = 2 * HEAD_RX - 1; // a head set to the other side of the stem (a second in a chord)
+
+  // A chord's heads, low to high, with the side each goes (a second puts one head on the other side of the stem:
+  // the upper one to the right with the stem up, the lower one to the left with it down), and the column of each
+  // accidental counted out from the heads (signs closer than a sixth apart take another column).
+  function layoutHeads(heads, stem) {
+    const up = stem !== -1;
+    const order = up ? heads : [...heads].reverse();
+    order.forEach((head, k) => {
+      const prev = order[k - 1];
+      head.offset = prev && !prev.offset && Math.abs(head.pos - prev.pos) === 1 ? (up ? 1 : -1) : 0;
+    });
+    const columns = [];
+    for (const head of [...heads].reverse().filter((h) => h.accidental !== null)) {
+      let col = columns.findIndex((list) => list.every((pos) => Math.abs(pos - head.pos) >= 6));
+      if (col < 0) {
+        col = columns.length;
+        columns.push([]);
+      }
+      columns[col].push(head.pos);
+      head.column = col;
+    }
+    return columns.length;
   }
 
   // Beam groups: notes with flags (no rests between) in the same beat, which is a quarter in simple time and a
@@ -160,38 +190,51 @@
       key: !prev || prev.key.fifths !== measure.key.fifths || prev.key.mode !== measure.key.mode,
       time: !prev || prev.time[0] !== measure.time[0] || prev.time[1] !== measure.time[1] || prev.timeSymbol !== measure.timeSymbol,
     };
-    const accidentals = shownAccidentals(measure.notes, measure.key);
+    const accidentals = headAccidentals(measure.notes, measure.key);
     // A clef change inside the measure applies from its note on.
     let clef = measure.clef;
     const notes = measure.notes.map((note, i) => {
       const clefChange = note.clef && note.clef !== clef ? note.clef : null;
       if (clefChange) clef = clefChange;
-      const pos = note.rest ? null : position(note.pitch, clef);
-      const stem = stemOf(note, pos);
+      if (note.rest) return { note, pos: null, top: null, bottom: null, heads: [], stem: 0, stemEnd: null, beam: null, accidental: null, clefChange };
+      const heads = N.pitchesOf(note).map(({ pitch, tie }, h) => ({
+        pitch, tie, pos: position(pitch, clef), accidental: accidentals[i][h], written: h === 0,
+      })).sort((a, b) => a.pos - b.pos);
+      const top = heads[heads.length - 1].pos;
+      const bottom = heads[0].pos;
+      const stem = stemOf(note, top, bottom);
       // Where the stem ends, in steps: flags of short notes need a longer stem.
       const length = STEM + Math.max(0, (FLAGS[note.type] ?? 0) - 1);
-      return { note, pos, stem, stemEnd: stem ? pos + stem * length : null, beam: null, accidental: accidentals[i], clefChange };
+      const written = heads.find((h) => h.written);
+      return {
+        note, heads, top, bottom, pos: written.pos, stem, stemEnd: stem === 1 ? top + length : stem === -1 ? bottom - length : null,
+        beam: null, accidental: written.accidental, clefChange,
+      };
     });
 
-    // A beam group takes one stem direction (from the note furthest from the middle line) and level stems
+    // A beam group takes one stem direction (from the head furthest from the middle line) and level stems
     // reaching past the furthest head.
     const beams = beamGroups(measure.notes, measure.time).map((members) => {
       const items = members.map((i) => notes[i]);
-      const far = items.reduce((a, b) => (Math.abs(b.pos - MIDDLE) > Math.abs(a.pos - MIDDLE) ? b : a));
-      const dir = far.pos >= MIDDLE ? -1 : 1;
+      const distance = (item) => Math.abs(farHead(item.top, item.bottom) - MIDDLE);
+      const far = items.reduce((a, b) => (distance(b) > distance(a) ? b : a));
+      const dir = farHead(far.top, far.bottom) >= MIDDLE ? -1 : 1;
       const levels = Math.max(...items.map((item) => FLAGS[item.note.type]));
-      const reach = dir === 1 ? Math.max(...items.map((item) => item.pos)) : Math.min(...items.map((item) => item.pos));
+      const reach = dir === 1 ? Math.max(...items.map((item) => item.top)) : Math.min(...items.map((item) => item.bottom));
       const end = reach + dir * (STEM + (levels - 1) * 1);
       items.forEach((item) => Object.assign(item, { stem: dir, stemEnd: end, beam: members }));
       return { members, dir, end, levels };
     });
 
     for (const item of notes) {
-      const left = (item.accidental !== null ? MIN.accidental * (Math.abs(item.accidental) === 2 ? 1.2 : 1) : 0)
-        + (item.clefChange ? SMALL_CLEF : 0);
+      const columns = layoutHeads(item.heads, item.stem);
+      const doubles = item.heads.some((h) => h.accidental !== null && Math.abs(h.accidental) === 2);
+      const leftHead = item.heads.some((h) => h.offset === -1);
+      const rightHead = item.heads.some((h) => h.offset === 1);
+      const left = columns * MIN.accidental * (doubles ? 1.2 : 1) + (leftHead ? HEAD_W : 0) + (item.clefChange ? SMALL_CLEF : 0);
       const head = item.note.rest ? MIN.rest : item.note.type === 'whole' ? MIN.whole : MIN.head;
-      let right = (item.note.dots ?? 0) * MIN.dot;
-      if (FLAGS[item.note.type] && !item.beam && item.stem === 1) right = Math.max(right, MIN.flag);
+      let right = (item.note.dots ?? 0) * MIN.dot + (rightHead ? HEAD_W : 0);
+      if (FLAGS[item.note.type] && !item.beam && item.stem === 1) right = Math.max(right, MIN.flag + (rightHead ? HEAD_W : 0));
       item.parts = { left, head, right };
       item.min = left + head + right + MIN.gap;
     }
@@ -259,15 +302,16 @@
     let up = TOP_LINE + 2;
     let down = -2;
     for (const info of row) {
-      for (const { pos, stemEnd } of info.notes) {
-        if (pos === null) continue;
-        up = Math.max(up, pos + 1, (stemEnd ?? pos) + 1);
-        down = Math.min(down, pos - 1, (stemEnd ?? pos) - 1);
+      for (const { top, bottom, stemEnd } of info.notes) {
+        if (top === null) continue;
+        up = Math.max(up, top + 1, (stemEnd ?? top) + 1);
+        down = Math.min(down, bottom - 1, (stemEnd ?? bottom) - 1);
       }
     }
     // Tuplet numbers and ties sit a little beyond the stems or heads.
     const nested = row.some((info) => info.tuplets.some((t) => t[2] === 2));
-    const extra = (row.some((info) => info.tuplets.length || info.notes.some((n) => n.note.tie)) ? 2 : 0) + (nested ? 2 : 0);
+    const tied = (n) => n.heads.some((h) => h.tie);
+    const extra = (row.some((info) => info.tuplets.length || info.notes.some(tied)) ? 2 : 0) + (nested ? 2 : 0);
     return { up: up + extra, down: down - extra };
   }
 
@@ -396,35 +440,51 @@
       }
       return { x, y: yOf(MIDDLE), stem: 0 };
     }
+    // Every head of the note (one, or a chord's), the written pitch's position on the group for a single note.
+    const { heads } = item;
     const y = yOf(pos);
     group.dataset.pos = pos;
     group.dataset.midi = N.midi(note.pitch);
-    drawLedgers(group, x, pos, yOf, note.type === 'whole' ? 12 : 10);
-    if (accidental !== null) {
-      group.append(svgEl('text', {
-        x: x - HEAD_RX - 2, y: y + 5, class: 'sv-accidental', 'data-accidental': accidental,
-      }, SIGNS[accidental]));
-    }
-    if (note.type === 'whole') {
-      group.append(svgEl('ellipse', { cx: x, cy: y, rx: 7.5, ry: 5, class: 'sv-open sv-whole sv-head' }));
-    } else {
-      group.append(svgEl('ellipse', {
-        cx: x, cy: y, rx: HEAD_RX, ry: 4.6, transform: `rotate(-20 ${x} ${y})`,
-        class: `${OPEN[note.type] ? 'sv-open' : 'sv-fill'} sv-head`,
-      }));
-    }
-    for (let d = 0; d < (note.dots ?? 0); d++) {
-      // A note on a line puts its dots in the space above.
-      const onLine = pos % 2 === 0;
-      group.append(svgEl('circle', { cx: x + 11 + d * 6, cy: onLine ? y - HALF : y, r: 2, class: 'sv-fill sv-dot' }));
-    }
-    if (!stem) return { x, y, stem: 0 };
+    if (heads.length > 1) group.dataset.chord = heads.length;
+    const half = note.type === 'whole' ? 12 : 10;
+    const leftHead = heads.some((h) => h.offset === -1);
+    const rightHead = heads.some((h) => h.offset === 1);
+    // Ledger lines reach the furthest heads, wider when a head sits beside the stem on that side.
+    drawLedgers(group, x + (rightHead ? HEAD_W / 2 : leftHead ? -HEAD_W / 2 : 0), item.top, yOf, half + (leftHead || rightHead ? HEAD_W / 2 : 0));
+    if (item.bottom !== item.top) drawLedgers(group, x + (rightHead ? HEAD_W / 2 : leftHead ? -HEAD_W / 2 : 0), item.bottom, yOf, half + (leftHead || rightHead ? HEAD_W / 2 : 0));
+    const drawnHeads = heads.map((head) => {
+      const hx = x + head.offset * HEAD_W;
+      const hy = yOf(head.pos);
+      const midi = N.midi(head.pitch);
+      if (head.accidental !== null) {
+        const ax = x - HEAD_RX - 2 - (leftHead ? HEAD_W : 0) - head.column * MIN.accidental;
+        group.append(svgEl('text', {
+          x: ax, y: hy + 5, class: 'sv-accidental', 'data-accidental': head.accidental, 'data-pos': head.pos, 'data-column': head.column,
+        }, SIGNS[head.accidental]));
+      }
+      if (note.type === 'whole') {
+        group.append(svgEl('ellipse', { cx: hx, cy: hy, rx: 7.5, ry: 5, class: 'sv-open sv-whole sv-head', 'data-pos': head.pos, 'data-midi': midi }));
+      } else {
+        group.append(svgEl('ellipse', {
+          cx: hx, cy: hy, rx: HEAD_RX, ry: 4.6, transform: `rotate(-20 ${hx} ${hy})`,
+          class: `${OPEN[note.type] ? 'sv-open' : 'sv-fill'} sv-head`, 'data-pos': head.pos, 'data-midi': midi,
+        }));
+      }
+      for (let d = 0; d < (note.dots ?? 0); d++) {
+        // A head on a line puts its dots in the space above.
+        const onLine = head.pos % 2 === 0;
+        group.append(svgEl('circle', { cx: x + 11 + (rightHead ? HEAD_W : 0) + d * 6, cy: onLine ? hy - HALF : hy, r: 2, class: 'sv-fill sv-dot' }));
+      }
+      return { x: hx, y: hy, pos: head.pos, midi, tie: head.tie };
+    });
+    if (!stem) return { x, y, stem: 0, heads: drawnHeads };
     const stemX = x + stem * STEM_DX;
     const end = yOf(item.stemEnd);
+    const from = yOf(stem === 1 ? item.bottom : item.top);
     group.dataset.stem = stem === 1 ? 'up' : 'down';
-    group.append(svgEl('line', { x1: stemX, x2: stemX, y1: y - stem, y2: end, class: 'sv-stem' }));
+    group.append(svgEl('line', { x1: stemX, x2: stemX, y1: from - stem, y2: end, class: 'sv-stem' }));
     if (FLAGS[note.type] && !item.beam) drawFlags(group, stemX, end, stem, FLAGS[note.type]);
-    return { x, y, stem, stemX, end };
+    return { x, y, stem, stemX, end, heads: drawnHeads };
   }
 
   // Beams: one across the group, then for 16ths and 32nds a further beam between neighbours that both have it,
@@ -578,15 +638,22 @@
 
     const ties = svgEl('g', { class: 'sv-ties' });
     svg.append(ties);
-    const starts = (n) => n.tie === 'start' || n.tie === 'both';
-    const stops = (n) => n.tie === 'stop' || n.tie === 'both';
-    // side: +1 draws below the heads (y grows downwards), -1 above. Away from the stem.
-    const sideOf = (d) => (d.stem ? d.stem : d.pos >= MIDDLE ? -1 : 1);
+    // A tie per tied pitch, to the same pitch in the next note. side: +1 draws below the heads (y grows downwards),
+    // -1 above: away from the stem for a single note; in a chord, the upper heads' ties curve up and the lower down.
+    const sideOf = (d, head) => {
+      if (d.heads.length > 1) {
+        const mid = (d.heads[0].pos + d.heads[d.heads.length - 1].pos) / 2;
+        return head.pos > mid || (head.pos === mid && d.stem !== -1) ? -1 : 1;
+      }
+      return d.stem ? d.stem : head.pos >= MIDDLE ? -1 : 1;
+    };
     rowNotes.forEach((d, i) => {
-      if (i === 0 && stops(d.note)) drawTie(ties, null, d, sideOf(d));
-      if (!starts(d.note)) return;
-      const next = rowNotes[i + 1];
-      drawTie(ties, d, next ?? null, sideOf(d));
+      for (const head of d.heads ?? []) {
+        if (i === 0 && N.tieStops(head.tie)) drawTie(ties, null, head, sideOf(d, head));
+        if (!N.tieStarts(head.tie)) continue;
+        const next = rowNotes[i + 1]?.heads?.find((h) => h.midi === head.midi && N.tieStops(h.tie));
+        drawTie(ties, head, next ?? null, sideOf(d, head));
+      }
     });
     return { svg, width: end + RIGHT_PAD, height };
   }

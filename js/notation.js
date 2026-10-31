@@ -16,7 +16,8 @@
   //             tie: 'start'|'stop'|'both' (optional), tuplet: { actual, normal } (optional; actual notes in the time
   //             of normal), tupletStart / tupletStop: true on a tuplet group's first / last note,
   //             tuplet2 / tuplet2Start / tuplet2Stop: a tuplet inside that tuplet (the lengths multiply),
-  //             clef / tempo (optional): a change inside the measure, from this note on }
+  //             clef / tempo (optional): a change inside the measure, from this note on,
+  //             chord (optional): the other pitches sounding with it, [{ pitch, tie }] — each with its own tie }
   // Lengths are fractions of a whole note, [numerator, denominator], so tuplets and dots add up exactly.
 
   const TYPES = { whole: 1, half: 2, quarter: 4, eighth: 8, '16th': 16, '32nd': 32, '64th': 64 };
@@ -57,6 +58,24 @@
   function midi(pitch) {
     return 12 * (pitch.octave + 1) + SEMITONES[pitch.step] + pitch.alter;
   }
+
+  // Every pitch a note sounds, each with its own tie: [{ pitch, tie }], the written one first. A rest has none.
+  function pitchesOf(note) {
+    if (note.rest) return [];
+    return [{ pitch: note.pitch, tie: note.tie }, ...(note.chord ?? []).map((c) => ({ pitch: c.pitch, tie: c.tie }))];
+  }
+
+  // One line of a chord: its highest ('top') or lowest ('bottom') pitch, with that pitch's tie. null for a rest.
+  function lineOf(note, line = 'top') {
+    const all = pitchesOf(note);
+    if (!all.length) return null;
+    const higher = (a, b) => midi(b.pitch) > midi(a.pitch);
+    return all.reduce((a, b) => ((line === 'bottom' ? higher(b, a) : higher(a, b)) ? b : a));
+  }
+
+  const tieStarts = (tie) => tie === 'start' || tie === 'both';
+  const tieStops = (tie) => tie === 'stop' || tie === 'both';
+  const hasChords = (score) => score.measures.some((m) => m.notes.some((n) => n.chord?.length));
 
   function measureLength(time) {
     return frac(time[0], time[1]);
@@ -106,9 +125,15 @@
     if (!note || typeof note !== 'object' || !(note.type in TYPES)) return false;
     if (!isInt(note.dots ?? 0, 0, 2)) return false;
     if (note.rest === true) {
-      if (note.pitch !== undefined || note.tie !== undefined) return false;
+      if (note.pitch !== undefined || note.tie !== undefined || note.chord !== undefined) return false;
     } else if (!validPitch(note.pitch)) {
       return false;
+    }
+    if (note.chord !== undefined) {
+      if (!Array.isArray(note.chord) || !note.chord.length) return false;
+      if (!note.chord.every((c) => c && validPitch(c.pitch) && (c.tie === undefined || ['start', 'stop', 'both'].includes(c.tie)))) return false;
+      const midis = pitchesOf(note).map((p) => midi(p.pitch));
+      if (new Set(midis).size !== midis.length) return false;
     }
     if (note.tie !== undefined && !['start', 'stop', 'both'].includes(note.tie)) return false;
     const ratio = (t) => t && isInt(t.actual, 2, 16) && isInt(t.normal, 1, 16) && t.actual !== t.normal;
@@ -177,17 +202,14 @@
     return true;
   }
 
-  // A tie joins a note to the very next note, which must have the same pitch and end the tie.
+  // A tie joins a pitch to the same pitch in the very next note, which ends the tie (in a chord, pitch by pitch).
   function validTies(notes) {
+    const has = (note, pitch, test) => note && pitchesOf(note).some((p) => test(p.tie) && midi(p.pitch) === midi(pitch));
     for (let i = 0; i < notes.length; i++) {
-      const tie = notes[i].tie;
-      const starts = tie === 'start' || tie === 'both';
-      const stops = tie === 'stop' || tie === 'both';
-      const previous = notes[i - 1];
-      const previousStarts = previous && (previous.tie === 'start' || previous.tie === 'both');
-      if (stops !== Boolean(previousStarts)) return false;
-      if (stops && midi(previous.pitch) !== midi(notes[i].pitch)) return false;
-      if (starts && i === notes.length - 1) return false;
+      for (const { pitch, tie } of pitchesOf(notes[i])) {
+        if (tieStops(tie) && !has(notes[i - 1], pitch, tieStarts)) return false;
+        if (tieStarts(tie) && !has(notes[i + 1], pitch, tieStops)) return false;
+      }
     }
     return true;
   }
@@ -231,6 +253,13 @@
       if (n.tuplet2Stop) out.tuplet2Stop = true;
       if (n.clef) out.clef = n.clef;
       if (n.tempo !== undefined) out.tempo = n.tempo;
+      if (n.chord) {
+        out.chord = n.chord.map((c) => {
+          const member = { pitch: { step: c.pitch.step, alter: c.pitch.alter, octave: c.pitch.octave } };
+          if (c.tie) member.tie = c.tie;
+          return member;
+        });
+      }
       return out;
     };
     const out = {
@@ -325,6 +354,7 @@
       for (const note of measure.notes) {
         if (note.tie) return '붙임줄';
         if (note.tuplet) return '잇단음표';
+        if (note.chord) return '화음';
         if (note.tempo !== undefined) return '마디 중간 빠르기 바뀜';
         if (!legacyType(note)) return '음표 길이';
         if (!note.rest) {
@@ -422,7 +452,7 @@
   window.Notation = {
     TYPES, STEPS, SEMITONES, CLEFS, MAX_TITLE, TEMPO_RANGE,
     frac, add, sub, mul, cmp, toNumber, ZERO,
-    duration, midi, measureLength, filled, resolve,
+    duration, midi, pitchesOf, lineOf, tieStarts, tieStops, hasChords, measureLength, filled, resolve,
     isValid, clean, excerpt,
     fromLegacy, toLegacy, legacyProblem,
     parseMeasures, build,

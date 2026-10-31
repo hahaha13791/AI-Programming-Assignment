@@ -442,10 +442,23 @@ function select(start, length, end) {
   Settings.setSection(scoreId, { start, length, end });
 }
 
+// The line written down in a chord (⚙, per score): 'top' or 'bottom'.
+function chosenLine(score = chosenScore()) {
+  return score ? Settings.getLine(score.id) : 'top';
+}
+
+// The pitches to write down in measures start..end: each note's pitch in the chosen line of its chord, once per
+// attack (a pitch tied over from before belongs to where it started).
+function linePitches(score, start, end, line = chosenLine(score)) {
+  return score.measures.slice(start, end + 1).flatMap((m) => m.notes)
+    .map((note) => Notation.lineOf(note, line))
+    .filter((entry) => entry && !Notation.tieStops(entry.tie))
+    .map((entry) => ({ ...entry.pitch }));
+}
+
 // Sounding notes in measures start..end (a note tied over from before belongs to the earlier section).
 function soundingCount(score, start, end) {
-  return score.measures.slice(start, end + 1).flatMap((m) => m.notes)
-    .filter((note) => !note.rest && note.tie !== 'stop' && note.tie !== 'both').length;
+  return linePitches(score, start, end).length;
 }
 
 // The next section of the same length after this one, skipping rest-only ones; after the last comes the first.
@@ -480,11 +493,12 @@ function practiceSection() {
   const sel = selection(score);
   if (!score || !sel) return { section: null, reason: scoreId ? 'noNotes' : 'empty' };
   const measures = Notation.resolve(score);
-  // The pitches to write down: every sounding note once (a tied note once, where it starts).
-  const answer = measures.slice(sel.start, sel.end + 1).flatMap((m) => m.notes)
-    .filter((note) => !note.rest && note.tie !== 'stop' && note.tie !== 'both').map((note) => ({ ...note.pitch }));
+  // The pitches to write down: every sounding note once (a tied note once, where it starts), in a chord the line
+  // chosen in ⚙. The input staff's range comes from that line over the whole score.
+  const line = chosenLine(score);
+  const answer = linePitches(score, sel.start, sel.end, line);
   if (!answer.length) return { section: null, reason: 'restOnly' };
-  const all = score.measures.flatMap((m) => m.notes).filter((note) => !note.rest).map((note) => note.pitch);
+  const all = score.measures.flatMap((m) => m.notes).filter((note) => !note.rest).map((note) => Notation.lineOf(note, line).pitch);
   const byPitch = (a, b) => Notation.midi(a) - Notation.midi(b);
   const sorted = [...all].sort(byPitch);
   return {
@@ -804,7 +818,7 @@ function gradeRhythm(input) {
 function scoreTonic() {
   const score = scoreId && scores.get(scoreId);
   const range = playRange();
-  return score && range ? Playback.tonicOf(score, range.start, range.end) : { midi: TONIC, label: '도' };
+  return score && range ? Playback.tonicOf(score, range.start, range.end, chosenLine(score)) : { midi: TONIC, label: '도' };
 }
 
 $('btn-tonic').addEventListener('click', () => Sound.play([mode === 'score' ? scoreTonic().midi : TONIC]));
@@ -835,7 +849,7 @@ function playRange() {
 // `tonic` is set. Returns the playback length in seconds.
 function playSection(tonic) {
   const range = playRange();
-  const { events, total } = Playback.schedule(scores.get(scoreId), { ...range, tonic, speed: Settings.get('speed') });
+  const { events, total } = Playback.schedule(scores.get(scoreId), { ...range, tonic, speed: Settings.get('speed'), line: chosenLine() });
   return Sound.playEvents(events, total);
 }
 
@@ -942,6 +956,12 @@ function openSettings() {
   for (const input of document.querySelectorAll('#settings input[name="solfege"]')) {
     input.checked = input.value === Settings.get('solfege');
   }
+  // Only a score with chords has a line to choose.
+  const score = chosenScore();
+  $('settings-line').hidden = !score || !Notation.hasChords(score);
+  for (const input of document.querySelectorAll('#settings input[name="line"]')) {
+    input.checked = input.value === chosenLine(score);
+  }
   $('settings').hidden = false;
   $('btn-settings').setAttribute('aria-expanded', 'true');
   document.querySelector('#settings input:checked')?.focus();
@@ -963,6 +983,11 @@ $('settings').addEventListener('change', (event) => {
   if (event.target.name === 'solfege') {
     Settings.set('solfege', event.target.value);
     scoreInput.setStyle(event.target.value);
+  }
+  // Another line is another answer: the section starts over.
+  if (event.target.name === 'line' && scoreId) {
+    Settings.setLine(scoreId, event.target.value);
+    newQuestion();
   }
 });
 document.addEventListener('pointerdown', (event) => {

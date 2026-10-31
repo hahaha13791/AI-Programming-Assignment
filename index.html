@@ -42,6 +42,11 @@
             <label><input type="radio" name="solfege" value="movable"> 이동도 (으뜸음 = 도·라)</label>
             <label><input type="radio" name="solfege" value="fixed"> 고정도 (C = 도)</label>
           </fieldset>
+          <fieldset class="settings-group" id="settings-line" hidden>
+            <legend>화음에서 받아 적는 음 (이 악보)</legend>
+            <label><input type="radio" name="line" value="top"> 맨 위 음 (선율)</label>
+            <label><input type="radio" name="line" value="bottom"> 맨 아래 음 (베이스)</label>
+          </fieldset>
         </div>
         <!-- 내 악보 [새 악보]: 직접 만들기 or 파일 불러오기 (MusicXML), in a small box like ⚙'s. -->
         <div class="settings new-score" id="new-score" role="dialog" aria-labelledby="new-score-title" hidden>

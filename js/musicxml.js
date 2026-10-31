@@ -345,8 +345,23 @@
     return rests;
   }
 
-  // One MusicXML note of the chosen line → a v2 note, with its file tie and tuplet marks kept for the passes after.
-  function noteOf(element, length, interval) {
+  // A pitched MusicXML note's pitch (to concert pitch) and its file tie marks.
+  function pitchOf(element, interval) {
+    const pitch = childOf(element, 'pitch');
+    const alter = Number(childText(pitch, 'alter') || 0);
+    if (!Number.isInteger(alter) || Math.abs(alter) > 2) throw never('미분음');
+    const ties = childrenOf(element, 'tie').map((tie) => tie.getAttribute('type'));
+    const marks = ties.length ? ties : [...element.querySelectorAll('notations > tied')].map((tie) => tie.getAttribute('type'));
+    return {
+      pitch: transpose({ step: childText(pitch, 'step'), alter, octave: Number(childText(pitch, 'octave')) }, interval),
+      tieStart: marks.includes('start'),
+      tieStop: marks.includes('stop'),
+    };
+  }
+
+  // One MusicXML note of the chosen line (and the notes of its chord) → a v2 note, with its file tie and tuplet
+  // marks kept for the passes after.
+  function noteOf(element, length, interval, chordElements = []) {
     if (hasChild(element, 'cue')) throw never('작은 음표(cue)');
     if (hasChild(element, 'unpitched')) throw never('음높이 없는 음');
     let type = childText(element, 'type');
@@ -370,15 +385,18 @@
     if (tuplet) note.whole = tuplet;
     if (hasChild(element, 'rest')) {
       note.rest = true;
+      if (chordElements.length) throw never('쉼표에 붙은 화음');
     } else {
-      const pitch = childOf(element, 'pitch');
-      const alter = Number(childText(pitch, 'alter') || 0);
-      if (!Number.isInteger(alter) || Math.abs(alter) > 2) throw never('미분음');
-      note.pitch = transpose({ step: childText(pitch, 'step'), alter, octave: Number(childText(pitch, 'octave')) }, interval);
-      const ties = childrenOf(element, 'tie').map((tie) => tie.getAttribute('type'));
-      const marks = ties.length ? ties : [...element.querySelectorAll('notations > tied')].map((tie) => tie.getAttribute('type'));
-      note.tieStart = marks.includes('start');
-      note.tieStop = marks.includes('stop');
+      Object.assign(note, pitchOf(element, interval));
+      if (chordElements.length) {
+        note.chord = chordElements.map((member) => {
+          if (hasChild(member, 'rest') || hasChild(member, 'unpitched')) throw never('화음 안의 쉼표');
+          if ((childText(member, 'type') || type) !== type || childrenOf(member, 'dot').length !== dots) throw never('길이가 다른 화음 음');
+          return pitchOf(member, interval);
+        });
+        const midis = [note, ...note.chord].map((p) => N.midi(p.pitch));
+        if (new Set(midis).size !== midis.length) throw never('같은 음이 겹친 화음');
+      }
     }
     // The file's tuplet brackets on this note, each with its own ratio when the file gives it (needed for a tuplet
     // inside a tuplet, where the note's time-modification is the two ratios multiplied).
@@ -483,19 +501,26 @@
     }
   }
 
-  // Keeps a tie only where the next note of the line ends it on the same pitch. Returns how many were dropped.
+  // Keeps a tie only where the next note of the line ends it on the same pitch (in a chord, pitch by pitch).
+  // Returns how many were dropped.
   function pairTies(notes) {
     let dropped = 0;
+    const entries = (note) => (note && !note.rest ? [note, ...(note.chord ?? [])] : []);
     notes.forEach((note, i) => {
-      if (note.rest) return;
-      const joins = (a, b) => a && b && !a.rest && !b.rest && a.tieStart && b.tieStop && N.midi(a.pitch) === N.midi(b.pitch);
-      const starts = joins(note, notes[i + 1]);
-      const stops = joins(notes[i - 1], note);
-      if (note.tieStart && !starts) dropped++;
-      if (starts && stops) note.tie = 'both';
-      else if (starts) note.tie = 'start';
-      else if (stops) note.tie = 'stop';
+      for (const entry of entries(note)) {
+        const find = (other, mark) => entries(other).some((x) => x[mark] && N.midi(x.pitch) === N.midi(entry.pitch));
+        const starts = entry.tieStart && find(notes[i + 1], 'tieStop');
+        const stops = entry.tieStop && find(notes[i - 1], 'tieStart');
+        if (entry.tieStart && !starts) dropped++;
+        entry.tie = starts && stops ? 'both' : starts ? 'start' : stops ? 'stop' : undefined;
+      }
     });
+    for (const note of notes) {
+      if (note.tie === undefined) delete note.tie;
+      if (note.chord) {
+        note.chord = note.chord.map(({ pitch, tie }) => (tie ? { pitch, tie } : { pitch }));
+      }
+    }
     return dropped;
   }
 
@@ -532,14 +557,23 @@
       pending = {};
       const events = [];
       const inside = tempoInside[i].map((c) => ({ start: c.offset, tempo: c.tempo })); // changes inside: clef, tempo
+      let inLine = false; // whether the last chord head was in the chosen line
       for (const item of m.items) {
         if (item.kind === 'note') {
+          // A chord's other notes belong to their head's line, even written on the other staff (a cross-staff chord).
+          if (item.chord) {
+            if (!inLine) continue;
+            const head = events[events.length - 1];
+            if (!head || N.cmp(head.start, item.start) !== 0) throw never('화음 머리 없는 화음 음');
+            head.chordElements.push(item.element);
+            continue;
+          }
           const staff = Number(childText(item.element, 'staff')) || 1;
           const voice = childText(item.element, 'voice') || '1';
-          if (staff !== line.staff || voice !== line.voice) continue;
-          if (item.chord) throw later('화음');
+          inLine = staff === line.staff && voice === line.voice;
+          if (!inLine) continue;
           if (item.grace) throw later('꾸밈음');
-          events.push(item);
+          events.push({ ...item, chordElements: [] });
           continue;
         }
         if (item.kind !== 'attributes') continue;
@@ -627,7 +661,7 @@
           starts.pop();
           fill(event.duration);
         } else {
-          notes.push(noteOf(event.element, event.duration, interval));
+          notes.push(noteOf(event.element, event.duration, interval, event.chordElements));
           cursor = N.add(event.start, event.duration);
         }
       }

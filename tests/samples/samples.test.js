@@ -22,21 +22,28 @@ T.test('35 공개 예제 18곡 읽기', async (T) => {
   }
 });
 
-// What a converted score sounds: [MIDI@start+length] with tied notes joined, from the start of the score.
+// What a converted score sounds: [MIDI@start+length] for every pitch (chords too), tied pitches joined, from the
+// start of the score, in order of start then pitch.
 function soundsOf(score) {
   const N = Notation;
   const out = [];
+  const waiting = {};
   let at = N.ZERO;
   for (const measure of N.resolve(score)) {
     for (const note of measure.notes) {
       const length = N.duration(note);
-      if (!note.rest) {
-        if (note.tie === 'stop' || note.tie === 'both') out[out.length - 1].length = N.add(out[out.length - 1].length, length);
-        else out.push({ midi: N.midi(note.pitch), start: at, length });
+      for (const { pitch, tie } of N.pitchesOf(note)) {
+        const midi = N.midi(pitch);
+        let sound = N.tieStops(tie) ? waiting[midi] : null;
+        if (sound) sound.length = N.add(sound.length, length);
+        else out.push(sound = { midi, start: at, length });
+        if (N.tieStarts(tie)) waiting[midi] = sound;
+        else delete waiting[midi];
       }
       at = N.add(at, length);
     }
   }
+  out.sort((a, b) => N.cmp(a.start, b.start) || a.midi - b.midi);
   return out.map((s) => `${s.midi}@${s.start[0]}/${s.start[1]}+${s.length[0]}/${s.length[1]}`);
 }
 
