@@ -469,7 +469,8 @@ function nextSelection() {
 
 function measureLabel(score, start, end) {
   const numbers = Notation.resolve(score).map((m) => m.number);
-  return end > start ? `${numbers[start]}~${numbers[end]}마디` : `${numbers[start]}마디`;
+  // An implicit measure shares the number before it, so a section of it and its neighbour can show one number.
+  return numbers[end] > numbers[start] ? `${numbers[start]}~${numbers[end]}마디` : `${numbers[start]}마디`;
 }
 
 // The section to practise, if the score can be practised (until TODO 33: within the expansion 4 range) and the

@@ -34,7 +34,14 @@
   // the range sounds for its whole tied length. Returns { events (for Sound.playEvents), total (seconds) }.
   function schedule(score, { start, end, tonic = true, speed = 1 }) {
     const measures = N.resolve(score);
-    const all = measures.flatMap((measure, m) => measure.notes.map((note) => ({ note, tempo: measure.tempo, m })));
+    // Each note with the tempo in force at it (a change inside a measure applies from its note on).
+    const all = measures.flatMap((measure, m) => {
+      let tempo = measure.tempo;
+      return measure.notes.map((note) => {
+        tempo = note.tempo ?? tempo;
+        return { note, tempo, m };
+      });
+    });
     const events = tonic ? [{ start: 0, length: TONIC_LENGTH, midi: tonicOf(score, start, end).midi, peak: NOTE_PEAK, sustain: false }] : [];
     let time = tonic ? LEAD_IN : 0;
     let total = time;

@@ -128,7 +128,7 @@ T.test('36-2 변환 결과', async (T) => {
   T.check([upper1, upper2, lower].every((r) => r.score.measures.every((m) => Notation.cmp(Notation.filled(m.notes), [1, 1]) === 0)), '모든 마디의 박이 4/4로 맞음');
   T.check(upper1.score.measures[0].tempo === 72, '빠르기 72');
 
-  // What TODO 37~40 adds is refused for now, with the reason; other things can't be held at all.
+  // What TODO 38~40 adds is refused for now, with the reason; other things can't be held at all (37단계 표기는 t37).
   const refuse = (xml, expected, label) => {
     let message = '';
     try {
@@ -142,10 +142,6 @@ T.test('36-2 변환 결과', async (T) => {
   refuse(one(n('C5', 24) + n('E5', 24, { chord: true }) + n('G5', 24)), '화음', '화음 (38단계)');
   refuse(one(n('D5', 0, { grace: true }) + n('C5', 48)), '꾸밈음', '꾸밈음 (39단계)');
   refuse(one(n('C5', 48)).replace('</measure>', '<barline location="right"><repeat direction="backward"/></barline></measure>'), '도돌이표', '도돌이표 (40단계)');
-  refuse(one(n('C5', 48), attrs({ key: 0, time: [4, 4], clef: '<clef><sign>C</sign><line>3</line></clef>' })), '알토 음자리표', '알토 음자리표 (37단계)');
-  refuse(one(n('C5', 48), attrs({ key: 0, time: [4, 4], clef: '<clef><sign>G</sign><line>2</line><clef-octave-change>-1</clef-octave-change></clef>' })), '옥타브 음자리표', '옥타브 음자리표 (37단계)');
-  refuse(one('<note><pitch><step>C</step><octave>5</octave></pitch><duration>48</duration><voice>1</voice><type>64th</type></note>'), '64분음표', '64분음표 (37단계)');
-  refuse(score36([{ name: 'X', measures: [attrs({ key: 0, time: [4, 4], clef: G_CLEF() }) + n('C5', 48), n('C5', 24), n('C5', 48)] }]), '짧은 마디', '곡 중간의 짧은 마디 (37단계)');
   refuse(one(n('C5', 48), attrs({ key: 0, time: [4, 4], clef: G_CLEF() }).replace('<beats>4</beats>', '<beats>3+2</beats>')), '혼합 박자', '혼합 박자');
   refuse(one(n('C5', 48) + n('D5', 12)), '긴 마디', '박자보다 긴 마디');
 });

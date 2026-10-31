@@ -791,6 +791,31 @@ button:focus-visible {
   font-size: 66px;
 }
 
+/* C clef (alto, tenor), drawn in sheet.js; the 8 of an octave clef; C / ¢ time. */
+.sv-clef-c {
+  fill: var(--text);
+}
+
+.sv-clef-c-curve,
+.sv-time-c {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 3.2;
+  stroke-linecap: round;
+}
+
+.sv-clef-octave {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 13px;
+  font-weight: 700;
+  text-anchor: middle;
+  fill: var(--text);
+}
+
+.sv-clef-group.is-small .sv-clef-octave {
+  font-size: 10px;
+}
+
 .sheet-svg .sv-accidental {
   font-size: 20px;
 }

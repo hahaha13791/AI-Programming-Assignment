@@ -17,6 +17,7 @@
   const CLEF_WIDTH = 46;
   const KEY_STEP = 10; // one sharp/flat of a key signature
   const TIME_WIDTH = 24;
+  const SMALL_CLEF = CLEF_WIDTH * 0.7;
   const MEASURE_PAD_LEFT = 8;
   const MEASURE_PAD_RIGHT = 6;
   const HEAD_RX = 6.5;
@@ -28,18 +29,30 @@
   const WIDE_MIN = 560;
   const WIDTH = { wide: 720, narrow: 360 };
 
-  // Bottom-line pitch of each clef, as a diatonic number (octave * 7 + step index).
+  // Each clef: the sounding pitch of its bottom line as a diatonic number (octave * 7 + step index), its shape and
+  // where an octave sign goes, and how far its key signature sits from the treble one (in steps). Pitches are as they
+  // sound, so an octave clef (a tenor voice's treble with an 8 below) draws them an octave from where they'd sit.
   const STEP_INDEX = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6 };
   const diatonic = (pitch) => pitch.octave * 7 + STEP_INDEX[pitch.step];
-  const BOTTOM = { treble: 4 * 7 + 2, bass: 2 * 7 + 4 }; // E4, G2
-  const position = (pitch, clef) => diatonic(pitch) - BOTTOM[clef];
+  const CLEF_INFO = {
+    treble: { bottom: 4 * 7 + 2, shape: 'G', shift: 0 }, // E4
+    'treble-8vb': { bottom: 3 * 7 + 2, shape: 'G', shift: 0, octave: -1 },
+    'treble-8va': { bottom: 5 * 7 + 2, shape: 'G', shift: 0, octave: 1 },
+    bass: { bottom: 2 * 7 + 4, shape: 'F', shift: -2 }, // G2
+    'bass-8vb': { bottom: 1 * 7 + 4, shape: 'F', shift: -2, octave: -1 },
+    'bass-8va': { bottom: 3 * 7 + 4, shape: 'F', shift: -2, octave: 1 },
+    alto: { bottom: 3 * 7 + 3, shape: 'C', line: 4, shift: -1 }, // F3; C4 on the middle line
+    tenor: { bottom: 3 * 7 + 1, shape: 'C', line: 6, shift: 1 }, // D3; C4 on the fourth line
+  };
+  const position = (pitch, clef) => diatonic(pitch) - CLEF_INFO[clef].bottom;
 
-  // Key signatures: the order of sharps and flats and their treble-clef positions (bass is two steps lower).
+  // Key signatures: the order of sharps and flats and their treble-clef positions, moved for other clefs. The tenor
+  // clef's sharps are the standard exception: F♯ and G♯ sit low instead of above the staff.
   const SHARPS = [['F', 8], ['C', 5], ['G', 9], ['D', 6], ['A', 3], ['E', 7], ['B', 4]];
   const FLATS = [['B', 4], ['E', 7], ['A', 3], ['D', 6], ['G', 2], ['C', 5], ['F', 1]];
-  const CLEF_SHIFT = { treble: 0, bass: -2 };
+  const TENOR_SHARPS = [2, 6, 3, 7, 4, 8, 5];
   const SIGNS = { 2: '\u{1D12A}', 1: '♯︎', 0: '♮︎', '-1': '♭︎', '-2': '\u{1D12B}' };
-  const CLEF_GLYPH = { treble: '\u{1D11E}', bass: '\u{1D122}' };
+  const CLEF_GLYPH = { G: '\u{1D11E}', F: '\u{1D122}' };
 
   // The alteration the key gives each step (e.g. 2 sharps: F and C are +1).
   function keyAlters(key) {
@@ -51,18 +64,17 @@
 
   // Signs of a key signature: [{ alter, pos }]. `cancel`: the previous key, whose signs the new one drops get a ♮.
   function keySigns(key, clef, cancel) {
-    const shift = CLEF_SHIFT[clef];
+    const info = CLEF_INFO[clef];
+    const where = (sharp, i) => (sharp && info.shape === 'C' && info.line === 6 ? TENOR_SHARPS[i] : (sharp ? SHARPS : FLATS)[i][1] + info.shift);
     const signs = [];
     if (cancel) {
       const keep = keyAlters(key);
       const oldList = cancel.fifths > 0 ? SHARPS : FLATS;
       for (let i = 0; i < Math.abs(cancel.fifths); i++) {
-        const [step, pos] = oldList[i];
-        if (keep[step] !== (cancel.fifths > 0 ? 1 : -1)) signs.push({ alter: 0, pos: pos + shift });
+        if (keep[oldList[i][0]] !== (cancel.fifths > 0 ? 1 : -1)) signs.push({ alter: 0, pos: where(cancel.fifths > 0, i) });
       }
     }
-    const list = key.fifths > 0 ? SHARPS : FLATS;
-    for (let i = 0; i < Math.abs(key.fifths); i++) signs.push({ alter: key.fifths > 0 ? 1 : -1, pos: list[i][1] + shift });
+    for (let i = 0; i < Math.abs(key.fifths); i++) signs.push({ alter: key.fifths > 0 ? 1 : -1, pos: where(key.fifths > 0, i) });
     return signs;
   }
 
@@ -91,7 +103,7 @@
     return node;
   }
 
-  const FLAGS = { eighth: 1, '16th': 2, '32nd': 3 };
+  const FLAGS = { eighth: 1, '16th': 2, '32nd': 3, '64th': 4 };
   const OPEN = { whole: true, half: true };
 
   function stemOf(note, pos) {
@@ -125,34 +137,40 @@
     return groups.filter((members) => members.length > 1);
   }
 
-  // Tuplet groups: [first, last] note indices.
+  // Tuplet groups: [first, last, level] note indices; level 2 is a tuplet inside a tuplet.
   function tupletGroups(notes) {
     const groups = [];
-    let first = null;
-    notes.forEach((note, i) => {
-      if (note.tupletStart) first = i;
-      if (note.tupletStop && first !== null) {
-        groups.push([first, i]);
-        first = null;
-      }
-    });
+    for (const [name, level] of [['tuplet', 1], ['tuplet2', 2]]) {
+      let first = null;
+      notes.forEach((note, i) => {
+        if (note[`${name}Start`]) first = i;
+        if (note[`${name}Stop`] && first !== null) {
+          groups.push([first, i, level]);
+          first = null;
+        }
+      });
+    }
     return groups;
   }
 
   // Everything needed to space and draw one measure.
   function measureInfo(measure, index, prev) {
     const changes = {
-      clef: !prev || prev.clef !== measure.clef,
+      clef: !prev || prev.endClef !== measure.clef,
       key: !prev || prev.key.fifths !== measure.key.fifths || prev.key.mode !== measure.key.mode,
-      time: !prev || prev.time[0] !== measure.time[0] || prev.time[1] !== measure.time[1],
+      time: !prev || prev.time[0] !== measure.time[0] || prev.time[1] !== measure.time[1] || prev.timeSymbol !== measure.timeSymbol,
     };
     const accidentals = shownAccidentals(measure.notes, measure.key);
+    // A clef change inside the measure applies from its note on.
+    let clef = measure.clef;
     const notes = measure.notes.map((note, i) => {
-      const pos = note.rest ? null : position(note.pitch, measure.clef);
+      const clefChange = note.clef && note.clef !== clef ? note.clef : null;
+      if (clefChange) clef = clefChange;
+      const pos = note.rest ? null : position(note.pitch, clef);
       const stem = stemOf(note, pos);
       // Where the stem ends, in steps: flags of short notes need a longer stem.
       const length = STEM + Math.max(0, (FLAGS[note.type] ?? 0) - 1);
-      return { note, pos, stem, stemEnd: stem ? pos + stem * length : null, beam: null, accidental: accidentals[i] };
+      return { note, pos, stem, stemEnd: stem ? pos + stem * length : null, beam: null, accidental: accidentals[i], clefChange };
     });
 
     // A beam group takes one stem direction (from the note furthest from the middle line) and level stems
@@ -169,7 +187,8 @@
     });
 
     for (const item of notes) {
-      const left = item.accidental !== null ? MIN.accidental * (Math.abs(item.accidental) === 2 ? 1.2 : 1) : 0;
+      const left = (item.accidental !== null ? MIN.accidental * (Math.abs(item.accidental) === 2 ? 1.2 : 1) : 0)
+        + (item.clefChange ? SMALL_CLEF : 0);
       const head = item.note.rest ? MIN.rest : item.note.type === 'whole' ? MIN.whole : MIN.head;
       let right = (item.note.dots ?? 0) * MIN.dot;
       if (FLAGS[item.note.type] && !item.beam && item.stem === 1) right = Math.max(right, MIN.flag);
@@ -186,7 +205,7 @@
     if (rowStart) {
       width += CLEF_WIDTH + keySigns(info.key, info.clef, info.changes.key ? info.prevKey : undefined).length * KEY_STEP;
     } else {
-      if (info.changes.clef) width += CLEF_WIDTH * 0.7;
+      if (info.changes.clef) width += SMALL_CLEF;
       if (info.changes.key) width += keySigns(info.key, info.clef, info.prevKey).length * KEY_STEP + 4;
     }
     if (info.changes.time) width += TIME_WIDTH;
@@ -247,7 +266,8 @@
       }
     }
     // Tuplet numbers and ties sit a little beyond the stems or heads.
-    const extra = row.some((info) => info.tuplets.length || info.notes.some((n) => n.note.tie)) ? 2 : 0;
+    const nested = row.some((info) => info.tuplets.some((t) => t[2] === 2));
+    const extra = (row.some((info) => info.tuplets.length || info.notes.some((n) => n.note.tie)) ? 2 : 0) + (nested ? 2 : 0);
     return { up: up + extra, down: down - extra };
   }
 
@@ -260,17 +280,56 @@
     return signs.length * KEY_STEP;
   }
 
+  // A clef at x. G and F clefs are font glyphs (treble: the curl on the G line, position 2; bass: the dots around the
+  // F line, position 6), with a small 8 below or above for an octave clef. The C clef (alto, tenor) is drawn: two bars
+  // and two curves meeting on its C line. Small: a change inside a row. Returns the width it takes.
   function drawClef(parent, clef, x, yOf, small) {
-    // Treble: the curl sits on the G line (position 2); bass: the dots straddle the F line (position 6).
-    const y = clef === 'treble' ? yOf(0) + 2 : yOf(4) + 23;
-    parent.append(svgEl('text', {
-      x, y, class: `staff-clef sv-clef${small ? ' is-small' : ''}`, 'data-clef': clef,
-    }, CLEF_GLYPH[clef]));
-    return small ? CLEF_WIDTH * 0.7 : CLEF_WIDTH;
+    const info = CLEF_INFO[clef];
+    const group = svgEl('g', { class: `sv-clef-group${small ? ' is-small' : ''}`, 'data-clef': clef });
+    parent.append(group);
+    const scale = small ? 0.72 : 1;
+    if (info.shape === 'C') {
+      const cy = yOf(info.line);
+      const h = 4 * HALF * scale;
+      const w = 22 * scale;
+      group.append(svgEl('rect', { x, y: cy - h, width: 4.5 * scale, height: 2 * h, class: 'sv-fill sv-clef-c' }));
+      group.append(svgEl('rect', { x: x + 6.5 * scale, y: cy - h, width: 1.6 * scale, height: 2 * h, class: 'sv-fill sv-clef-c' }));
+      for (const dir of [-1, 1]) {
+        const tip = cy + dir * h;
+        group.append(svgEl('path', {
+          d: `M${x + 8 * scale} ${cy} L${x + 11 * scale} ${cy + dir * 4 * scale}`
+            + ` C${x + 14 * scale} ${cy + dir * 9 * scale} ${x + w} ${cy + dir * 6 * scale} ${x + w} ${cy + dir * (h * 0.55)}`
+            + ` C${x + w} ${tip - dir * 2 * scale} ${x + 15 * scale} ${tip + dir * 1.5 * scale} ${x + 12 * scale} ${tip - dir * 4 * scale}`,
+          class: 'sv-clef-c-curve',
+        }));
+        group.append(svgEl('circle', { cx: x + 13.5 * scale, cy: tip - dir * 5 * scale, r: 2.6 * scale, class: 'sv-fill sv-clef-c' }));
+      }
+    } else {
+      const y = info.shape === 'G' ? yOf(0) + 2 : yOf(4) + 23;
+      group.append(svgEl('text', { x, y, class: `staff-clef sv-clef${small ? ' is-small' : ''}`, 'data-clef': clef }, CLEF_GLYPH[info.shape]));
+      if (info.octave) {
+        // The 8 under (or over) the clef's middle, just clear of the staff.
+        const y8 = info.octave < 0 ? yOf(info.shape === 'G' ? -4 : -1) + 4 : yOf(info.shape === 'G' ? 12 : 10) - 1;
+        group.append(svgEl('text', { x: x + (small ? 9 : 13), y: y8, class: 'sv-clef-octave', 'data-octave': info.octave }, '8'));
+      }
+    }
+    return small ? SMALL_CLEF : CLEF_WIDTH;
   }
 
-  function drawTime(parent, time, x, yOf) {
+  // A time signature as numbers, or C (common time) / ¢ (cut time) when the score writes it so.
+  function drawTime(parent, time, x, yOf, symbol) {
     const cx = x + TIME_WIDTH / 2;
+    if (symbol) {
+      const group = svgEl('g', { class: 'sv-time-symbol', 'data-time': `${time[0]}/${time[1]}`, 'data-symbol': symbol });
+      parent.append(group);
+      group.append(svgEl('path', {
+        d: `M${cx + 7} ${yOf(6) + 1} C${cx + 4} ${yOf(7.5)} ${cx - 8} ${yOf(7)} ${cx - 8} ${yOf(4)}`
+          + ` C${cx - 8} ${yOf(1)} ${cx + 4} ${yOf(0.5)} ${cx + 7} ${yOf(2) - 1}`,
+        class: 'sv-time-c',
+      }));
+      if (symbol === 'cut') group.append(svgEl('line', { x1: cx, x2: cx, y1: yOf(9), y2: yOf(-1), class: 'sv-stem sv-time-cut' }));
+      return TIME_WIDTH;
+    }
     parent.append(svgEl('text', { x: cx, y: yOf(4) - 2, class: 'sv-time', 'data-time': `${time[0]}/${time[1]}` }, String(time[0])));
     parent.append(svgEl('text', { x: cx, y: yOf(0) - 2, class: 'sv-time' }, String(time[1])));
     return TIME_WIDTH;
@@ -301,10 +360,10 @@
       }));
       return;
     }
-    // Eighth, 16th and 32nd rests: a slanted stem with one, two or three hooks.
+    // Eighth to 64th rests: a slanted stem with one to four hooks.
     const hooks = FLAGS[note.type];
     const top = y - 6 - (hooks - 1) * 4;
-    const bottom = y + 9 + (hooks > 2 ? 4 : 0);
+    const bottom = y + 9 + (hooks > 2 ? 4 : 0) + (hooks > 3 ? 4 : 0);
     parent.append(svgEl('line', { x1: x + 4 + (hooks - 1) * 1.5, y1: top, x2: x - 1, y2: bottom, class: 'sv-rest-stem' }));
     for (let k = 0; k < hooks; k++) {
       const hy = top + k * 8;
@@ -400,22 +459,26 @@
     }
   }
 
-  // Tuplets: the number (3, 5, ...) on the stem side; a bracket too unless the group is exactly one beam group.
+  // Tuplets: the number (3, 5, ...) on the stem side; a bracket too unless the group is exactly one beam group. A
+  // group holding an inner tuplet sits one level further out than the inner one.
   function drawTuplets(parent, info, drawn, yOf) {
-    for (const [first, last] of info.tuplets) {
+    for (const [first, last, level] of info.tuplets) {
       const items = drawn.slice(first, last + 1);
       const stems = items.filter((d) => d.stem);
       const above = !stems.length || stems.filter((d) => d.stem === 1).length * 2 >= stems.length;
       const ends = items.map((d) => (d.stem ? d.end : d.y));
-      const y = above ? Math.min(...ends, yOf(TOP_LINE)) - 8 : Math.max(...ends, yOf(0)) + 14;
+      const holdsInner = level === 1 && info.tuplets.some(([f, l, lv]) => lv === 2 && f >= first && l <= last);
+      const out = holdsInner ? 13 : 0;
+      const y = above ? Math.min(...ends, yOf(TOP_LINE)) - 8 - out : Math.max(...ends, yOf(0)) + 14 + out;
       const x1 = items[0].x - 5;
       const x2 = items[items.length - 1].x + 5;
       const mid = (x1 + x2) / 2;
       const note = info.notes[first].note;
-      const group = svgEl('g', { class: 'sv-tuplet', 'data-actual': note.tuplet.actual });
+      const ratio = level === 2 ? note.tuplet2 : note.tuplet;
+      const group = svgEl('g', { class: 'sv-tuplet', 'data-actual': ratio.actual, 'data-level': level });
       parent.append(group);
-      group.append(svgEl('text', { x: mid, y: y + 4, class: 'sv-tuplet-number' }, String(note.tuplet.actual)));
-      const beamed = info.beams.some((b) => b.members[0] === first && b.members[b.members.length - 1] === last);
+      group.append(svgEl('text', { x: mid, y: y + 4, class: 'sv-tuplet-number' }, String(ratio.actual)));
+      const beamed = !holdsInner && info.beams.some((b) => b.members[0] === first && b.members[b.members.length - 1] === last);
       if (!beamed) {
         const hook = above ? 4 : -4;
         group.append(svgEl('path', {
@@ -458,7 +521,7 @@
     for (let line = 0; line <= TOP_LINE; line += 2) {
       svg.append(svgEl('line', { x1: STAFF_LEFT, x2: end, y1: yOf(line), y2: yOf(line), class: 'sv-line' }));
     }
-    if (r > 0 || options.numberFirst) {
+    if ((r > 0 || options.numberFirst) && first.numbered !== false) {
       svg.append(svgEl('text', { x: STAFF_LEFT, y: 10, class: 'sv-number' }, String(first.number)));
     }
 
@@ -476,7 +539,7 @@
         if (info.changes.clef) x += drawClef(group, info.clef, x + 2, yOf, true);
         if (info.changes.key) x += drawSigns(group, keySigns(info.key, info.clef, info.prevKey), x, yOf) + 4;
       }
-      if (info.changes.time) x += drawTime(group, info.time, x, yOf);
+      if (info.changes.time) x += drawTime(group, info.time, x, yOf, info.timeSymbol);
 
       group.dataset.x0 = x;
       group.dataset.x1 = x + widths[k];
@@ -484,6 +547,7 @@
         info.notes.map((n) => N.toNumber(N.duration(n.note))));
       let nx = x + MEASURE_PAD_LEFT;
       const drawn = info.notes.map((item, i) => {
+        if (item.clefChange) drawClef(group, item.clefChange, nx + 1, yOf, true);
         const result = drawNote(group, item, nx + item.parts.left + item.parts.head / 2, yOf);
         nx += sizes[i];
         return result;
@@ -492,7 +556,7 @@
       drawTuplets(group, info, drawn, yOf);
       rowNotes.push(...drawn.map((d, i) => ({ ...d, note: info.notes[i].note, pos: info.notes[i].pos })));
       x += widths[k];
-      if (options.numberAll && k > 0) {
+      if (options.numberAll && k > 0 && info.numbered !== false) {
         group.append(svgEl('text', { x: xStart + 2, y: 10, class: 'sv-number' }, String(info.number)));
       }
       // The strip: a highlight behind the chosen measures, and a press area over each whole measure.
@@ -601,5 +665,7 @@
     return sheet;
   }
 
-  window.Sheet = { draw, strip, shownAccidentals, keySigns, keyAlters, position };
+  const clefBottom = (clef) => CLEF_INFO[clef].bottom;
+
+  window.Sheet = { draw, strip, shownAccidentals, keySigns, keyAlters, position, drawClef, clefBottom, CLEF_WIDTH };
 })();

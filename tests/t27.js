@@ -46,7 +46,9 @@ T.test('27-2 길이 계산', async (T) => {
   T.check(N.isValid(score('3[ C5:8 D5:8 E5:8 ] F5:q', { time: [2, 4] })), '셋잇단이 든 2/4 악보는 올바름');
   T.check(!N.isValid(score('C5:8 D5:8 E5:8 F5:q', { time: [2, 4] })), '셋잇단 표시 없이 길이가 넘치면 올바르지 않음');
   T.check(!N.isValid(score('3[ C5:8 D5:8 F5:q', { time: [2, 4] })), '닫히지 않은 잇단음표는 올바르지 않음');
-  T.check(!N.isValid(score('C5:h | D5:w')), '가운데 마디가 덜 차면 올바르지 않음');
+  T.check(!N.isValid(score('C5:h | D5:w')), '못갖춘마디 표시 없이 첫 마디가 덜 차면 올바르지 않음');
+  T.check(N.isValid(score('C5:w | D5:h | E5:w')), '가운데 마디가 덜 차도 올바름 (37단계부터: 도돌이표로 나뉜 마디 등, 박자보다 긴 마디만 안 됨)');
+  T.check(!N.isValid(score('C5:w D5:q | E5:w')), '박자보다 긴 마디는 올바르지 않음');
 });
 
 T.test('27-2 붙임줄·못갖춘마디·바뀜', async (T) => {

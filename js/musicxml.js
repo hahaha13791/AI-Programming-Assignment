@@ -140,9 +140,9 @@
   const ZERO = N.ZERO;
   const later = (what) => new ImportError(`아직 담지 못해요(${what}).`);
   const never = (what) => new ImportError(`불러올 수 없어요(${what}).`);
-  const NOTE_TYPES = ['whole', 'half', 'quarter', 'eighth', '16th', '32nd'];
-  const LATER_TYPES = {
-    '64th': '64분음표', '128th': '128분음표', '256th': '256분음표', '512th': '512분음표', '1024th': '1024분음표',
+  const NOTE_TYPES = ['whole', 'half', 'quarter', 'eighth', '16th', '32nd', '64th'];
+  const OTHER_TYPES = {
+    '128th': '128분음표', '256th': '256분음표', '512th': '512분음표', '1024th': '1024분음표',
     breve: '겹온음표', long: '롱가', maxima: '맥시마',
   };
   const DEFAULT_TEMPO = 120; // MusicXML's default when a score gives none
@@ -206,7 +206,7 @@
         }
         length = maxOf(length, cursor);
       }
-      return { items, length, number: measure.getAttribute('number') ?? '' };
+      return { items, length, number: measure.getAttribute('number') ?? '', implicit: measure.getAttribute('implicit') === 'yes' };
     });
   }
 
@@ -235,8 +235,9 @@
     return perMinute * N.toNumber(N.duration({ type, dots: childrenOf(metronome, 'beat-unit-dot').length })) * 4;
   }
 
-  // The score's tempo at the start of each measure, from every part's directions. One written at a measure's very
-  // end starts the next measure; a change inside a measure waits for TODO 37.
+  // The score's tempo at the start of each measure, from every part's directions (one written at a measure's very end
+  // starts the next measure), and the changes inside each measure: { starts: [tempo or undefined],
+  // inside: [[{ offset, tempo }, ...] per measure] }.
   function tempoMap(walked, count) {
     const changes = [];
     for (const measures of walked) {
@@ -250,17 +251,23 @@
         }
       });
     }
-    const tempos = new Array(count).fill(undefined);
+    const starts = new Array(count).fill(undefined);
+    const inside = Array.from({ length: count }, () => []);
     let current;
     for (let i = 0; i < count; i++) {
-      const here = changes.filter((c) => c.index === i);
+      const here = changes.filter((c) => c.index === i).sort((a, b) => N.cmp(a.offset, b.offset));
       const atStart = here.find((c) => N.cmp(c.offset, ZERO) === 0);
-      if (atStart) tempos[i] = atStart.tempo;
-      const inForce = tempos[i] ?? current;
-      if (here.some((c) => N.cmp(c.offset, ZERO) > 0 && c.tempo !== inForce)) throw later('마디 중간 빠르기 바뀜');
-      current = inForce;
+      if (atStart) starts[i] = atStart.tempo;
+      current = starts[i] ?? current;
+      for (const change of here) {
+        if (N.cmp(change.offset, ZERO) <= 0 || change.tempo === current) continue;
+        // Parts often repeat the same mark: one change per position.
+        if (inside[i].some((c) => N.cmp(c.offset, change.offset) === 0)) continue;
+        inside[i].push({ offset: change.offset, tempo: change.tempo });
+        current = change.tempo;
+      }
     }
-    return tempos;
+    return { starts, inside };
   }
 
   // A pitch moved by an interval of diatonic steps and semitones (a transposing part to concert pitch).
@@ -297,6 +304,7 @@
     return { fifths, mode: MODES[name] ?? 'major' };
   }
 
+  // { time: [beats, beatType], symbol: 'common'|'cut' when written as C or ¢ }.
   function timeOf(element) {
     if (hasChild(element, 'senza-misura')) throw never('무박자');
     const beats = childrenOf(element, 'beats');
@@ -304,8 +312,12 @@
     if (beats.length !== 1 || types.length !== 1 || /\D/.test(beats[0].textContent.trim())) throw never('혼합 박자');
     const time = [Number(beats[0].textContent), Number(types[0].textContent)];
     if (!(time[0] >= 1 && time[0] <= 32) || ![1, 2, 4, 8, 16, 32].includes(time[1])) throw never(`박자 ${time.join('/')}`);
-    return time;
+    const written = element.getAttribute('symbol');
+    const symbol = written === 'common' && String(time) === '4,4' ? 'common' : written === 'cut' && String(time) === '2,2' ? 'cut' : undefined;
+    return { time, symbol };
   }
+
+  const CLEF_OF = { G2: 'treble', 'G2-1': 'treble-8vb', 'G2+1': 'treble-8va', F4: 'bass', 'F4-1': 'bass-8vb', 'F4+1': 'bass-8va', C3: 'alto', C4: 'tenor' };
 
   function clefOf(element) {
     const sign = (childText(element, 'sign') || '').toUpperCase();
@@ -313,12 +325,9 @@
     const octave = Number(childText(element, 'clef-octave-change')) || 0;
     if (sign === 'TAB') throw never('TAB 보표');
     if (sign === 'PERCUSSION' || sign === 'NONE') throw never('음높이 없는 보표');
-    if (octave) throw later('옥타브 음자리표');
-    if (sign === 'G' && line === 2) return 'treble';
-    if (sign === 'F' && line === 4) return 'bass';
-    if (sign === 'C' && line === 3) throw later('알토 음자리표');
-    if (sign === 'C' && line === 4) throw later('테너 음자리표');
-    throw never(`음자리표 ${sign}${line}`);
+    const name = `${sign}${line}${octave ? (octave > 0 ? `+${octave}` : octave) : ''}`;
+    if (!CLEF_OF[name]) throw never(`음자리표 ${name}`);
+    return CLEF_OF[name];
   }
 
   // Rests that fill a gap (a voice silent for a while, a measure rest), largest first.
@@ -329,7 +338,7 @@
     let left = length;
     while (N.cmp(left, ZERO) > 0) {
       const size = REST_SIZES.find((r) => N.cmp(r.length, left) <= 0);
-      if (!size) throw later('쉼표로 채울 수 없는 빈 자리');
+      if (!size) throw never('쉼표로 채울 수 없는 빈 자리');
       rests.push({ type: size.type, dots: size.dots, rest: true });
       left = N.sub(left, size.length);
     }
@@ -338,7 +347,7 @@
 
   // One MusicXML note of the chosen line → a v2 note, with its file tie and tuplet marks kept for the passes after.
   function noteOf(element, length, interval) {
-    if (hasChild(element, 'cue')) throw later('작은 음표(cue)');
+    if (hasChild(element, 'cue')) throw never('작은 음표(cue)');
     if (hasChild(element, 'unpitched')) throw never('음높이 없는 음');
     let type = childText(element, 'type');
     let dots = childrenOf(element, 'dot').length;
@@ -346,7 +355,7 @@
     const actual = modification ? Number(childText(modification, 'actual-notes')) : 0;
     const normal = modification ? Number(childText(modification, 'normal-notes')) : 0;
     const tuplet = actual && normal && actual !== normal ? { actual, normal } : null;
-    if (type && LATER_TYPES[type]) throw later(LATER_TYPES[type]);
+    if (type && OTHER_TYPES[type]) throw never(OTHER_TYPES[type]);
     if (!type) {
       // No written type: the type and dots whose length matches.
       const found = REST_SIZES.find((size) => N.cmp(tuplet ? N.mul(size.length, N.frac(normal, actual)) : size.length, length) === 0);
@@ -358,6 +367,7 @@
     const note = { type, dots };
     if (tuplet) note.tuplet = tuplet;
     if (N.cmp(N.duration(note), length) !== 0) throw never('음 길이가 표기와 맞지 않음');
+    if (tuplet) note.whole = tuplet;
     if (hasChild(element, 'rest')) {
       note.rest = true;
     } else {
@@ -370,25 +380,44 @@
       note.tieStart = marks.includes('start');
       note.tieStop = marks.includes('stop');
     }
+    // The file's tuplet brackets on this note, each with its own ratio when the file gives it (needed for a tuplet
+    // inside a tuplet, where the note's time-modification is the two ratios multiplied).
     const brackets = [...element.querySelectorAll('notations > tuplet')];
-    note.bracketStarts = brackets.filter((b) => b.getAttribute('type') === 'start').length;
+    const bracketRatio = (b) => {
+      const a = Number(b.querySelector('tuplet-actual > tuplet-number')?.textContent);
+      const n = Number(b.querySelector('tuplet-normal > tuplet-number')?.textContent);
+      return a > 0 && n > 0 ? { actual: a, normal: n } : null;
+    };
+    note.bracketStarts = brackets.filter((b) => b.getAttribute('type') === 'start').map(bracketRatio);
     note.bracketStops = brackets.filter((b) => b.getAttribute('type') === 'stop').length;
     return note;
   }
 
-  // Tuplet groups in a measure: the file's brackets when it has them, else runs of notes with the same ratio, each
-  // closed when it adds up to `actual` notes of its first note's kind. A group inside a group waits for TODO 37.
+  // ratio a / ratio b, as a tuplet ratio in lowest terms (the inner of two nested tuplets).
+  function divideRatio(a, b) {
+    const [actual, normal] = N.frac(a.actual * b.normal, a.normal * b.actual);
+    return { actual, normal };
+  }
+
+  // Tuplet groups in a measure. A note's time-modification is the whole ratio it is played at; the file's brackets say
+  // where groups start and stop and how deep they nest (two levels at most). Without brackets, runs of notes with the
+  // same ratio are grouped, each closed when it adds up to `actual` notes of its first note's kind.
   function markTuplets(notes) {
+    if (notes.some((note) => note.bracketStarts?.length)) {
+      markNestedTuplets(notes);
+      return;
+    }
     let open = null;
     let sum = ZERO;
     let unit = null;
     notes.forEach((note, i) => {
-      if (note.bracketStarts > 1 || (open && note.bracketStarts)) throw later('잇단음표 안의 잇단음표');
       if (!note.tuplet) {
         if (open) throw never('잇단음표 묶음');
         return;
       }
-      if (open && (open.actual !== note.tuplet.actual || open.normal !== note.tuplet.normal)) throw later('잇단음표 안의 잇단음표');
+      if (open && (open.actual !== note.tuplet.actual || open.normal !== note.tuplet.normal)) {
+        open = null; // a new run with another ratio
+      }
       if (!open) {
         open = note.tuplet;
         note.tupletStart = true;
@@ -397,11 +426,61 @@
       }
       sum = N.add(sum, N.duration({ type: note.type, dots: note.dots }));
       const full = N.cmp(sum, N.mul(unit, N.frac(open.actual))) >= 0;
-      if (note.bracketStops || full || !notes[i + 1]?.tuplet) {
+      const next = notes[i + 1];
+      if (full || !next?.tuplet || next.tuplet.actual !== open.actual || next.tuplet.normal !== open.normal) {
         note.tupletStop = true;
         open = null;
       }
     });
+  }
+
+  // Groups from the file's brackets: [{ first, last, depth, ratio }], then each note's level-1 (and level-2) ratio. An
+  // outer group's ratio is its bracket's own, else the ratio of its notes outside the inner group; the inner one is
+  // what is left of the note's whole ratio.
+  function markNestedTuplets(notes) {
+    const open = [];
+    const groups = [];
+    notes.forEach((note, i) => {
+      for (const ratioOfBracket of note.bracketStarts ?? []) {
+        open.push({ first: i, depth: open.length + 1, ratio: ratioOfBracket });
+        if (open.length > 2) throw never('세 겹 잇단음표');
+      }
+      if (note.tuplet && !open.length) throw never('괄호 밖 잇단음표');
+      if (!note.tuplet && open.length) throw never('잇단음표 묶음');
+      note.depth = open.length;
+      for (let k = 0; k < (note.bracketStops ?? 0); k++) {
+        const group = open.pop();
+        if (!group) throw never('잇단음표 묶음');
+        groups.push({ ...group, last: i });
+      }
+    });
+    if (open.length) throw never('마디를 넘는 잇단음표');
+    const outerOf = (inner) => groups.find((g) => g.depth === 1 && g.first <= inner.first && g.last >= inner.last);
+    for (const group of groups.filter((g) => g.depth === 1)) {
+      const members = notes.slice(group.first, group.last + 1);
+      if (!group.ratio) {
+        const plain = members.find((note) => note.depth === 1);
+        group.ratio = plain ? plain.tuplet : null;
+      }
+      if (!group.ratio) throw never('잇단음표 비율');
+      members.forEach((note, k) => {
+        Object.assign(note, { tuplet: note.depth === 1 ? note.tuplet : group.ratio });
+        if (k === 0) note.tupletStart = true;
+        if (k === members.length - 1) note.tupletStop = true;
+      });
+    }
+    for (const group of groups.filter((g) => g.depth === 2)) {
+      const outer = outerOf(group);
+      if (!outer) throw never('잇단음표 묶음');
+      const members = notes.slice(group.first, group.last + 1);
+      members.forEach((note, k) => {
+        // The whole ratio was kept in tuplet2 for now (see below); the inner one is what the outer one leaves.
+        note.tuplet2 = divideRatio(note.whole, outer.ratio);
+        if (note.tuplet2.actual === note.tuplet2.normal) throw never('잇단음표 비율');
+        if (k === 0) note.tuplet2Start = true;
+        if (k === members.length - 1) note.tuplet2Stop = true;
+      });
+    }
   }
 
   // Keeps a tie only where the next note of the line ends it on the same pitch. Returns how many were dropped.
@@ -434,13 +513,14 @@
     const walked = allParts.map(walkPart);
     const measures = walked[allParts.findIndex((p) => p.getAttribute('id') === info.id)];
     if (!measures.length) throw new ImportError('마디가 없어요.');
-    const tempos = tempoMap(walked, measures.length);
+    const { starts: tempos, inside: tempoInside } = tempoMap(walked, measures.length);
     const concert = Boolean(doc.querySelector('concert-score'));
     const notices = new Set();
     let time = null;
     let key = null;
     let writtenKey = { fifths: 0, mode: 'major' };
-    let clef = null;
+    let endClef = null; // the clef in force at the end of the measure before
+    let timeSymbol;
     let interval = null;
     let tempo = null;
     let pending = {}; // changes written at a measure's end, for the next measure
@@ -451,6 +531,7 @@
       const attrs = pending;
       pending = {};
       const events = [];
+      const inside = tempoInside[i].map((c) => ({ start: c.offset, tempo: c.tempo })); // changes inside: clef, tempo
       for (const item of m.items) {
         if (item.kind === 'note') {
           const staff = Number(childText(item.element, 'staff')) || 1;
@@ -465,9 +546,12 @@
         const atStart = N.cmp(item.start, ZERO) === 0;
         const atEnd = !atStart && N.cmp(item.start, m.length) >= 0;
         const target = atEnd ? pending : attrs;
+        // A clef may change inside a measure (from the next note on). A key, time or transposition change there is
+        // practically never written, and isn't held.
         const change = (name, value, same) => {
-          if (!atStart && !atEnd && !same) throw later('마디 중간 음자리표·조·박자 바뀜');
-          target[name] = value;
+          if (atStart || atEnd || same) target[name] = value;
+          else if (name === 'clef') inside.push({ start: item.start, clef: value });
+          else throw never({ writtenKey: '마디 중간 조 바뀜', time: '마디 중간 박자 바뀜', interval: '마디 중간 이조 바뀜' }[name]);
         };
         for (const t of childrenOf(item.element, 'transpose')) {
           if (concert || !forStaff(t, line.staff)) continue;
@@ -483,70 +567,107 @@
         for (const t of childrenOf(item.element, 'time')) {
           if (!forStaff(t, line.staff)) continue;
           const value = timeOf(t);
-          change('time', value, String(value) === String(time));
+          change('time', value, String(value.time) === String(time) && value.symbol === timeSymbol);
         }
         for (const c of childrenOf(item.element, 'clef')) {
           if (!forStaff(c, line.staff)) continue;
           const value = clefOf(c);
-          change('clef', value, value === clef);
+          change('clef', value, false);
         }
       }
       if ('interval' in attrs) interval = attrs.interval;
       if (attrs.writtenKey) writtenKey = attrs.writtenKey;
       if (interval) notices.add('실음으로 옮겼어요');
       const measure = {};
-      const nextTime = attrs.time ?? time ?? [4, 4];
+      const nextTime = attrs.time ?? (time ? { time, symbol: timeSymbol } : { time: [4, 4] });
       const nextKey = transposeKey(writtenKey, interval);
-      const nextClef = attrs.clef ?? clef ?? 'treble';
-      if (String(nextTime) !== String(time)) measure.time = time = nextTime;
+      const nextClef = attrs.clef ?? endClef ?? 'treble';
+      if (String(nextTime.time) !== String(time) || nextTime.symbol !== timeSymbol) {
+        measure.time = time = nextTime.time;
+        timeSymbol = nextTime.symbol;
+        if (timeSymbol) measure.timeSymbol = timeSymbol;
+      }
       if (JSON.stringify(nextKey) !== JSON.stringify(key)) measure.key = key = nextKey;
-      if (nextClef !== clef) measure.clef = clef = nextClef;
+      if (nextClef !== endClef) measure.clef = nextClef;
+      endClef = nextClef;
       if (i === 0 && tempos[0] === undefined) notices.add(`빠르기 표시가 없어 ♩=${DEFAULT_TEMPO}`);
       const nextTempo = tempos[i] ?? tempo ?? DEFAULT_TEMPO;
       if (nextTempo !== tempo) measure.tempo = tempo = nextTempo;
+      if (m.implicit && i > 0) measure.implicit = true;
 
       // The measure's length: as written (its furthest voice), or a whole measure when it is empty.
       const full = N.measureLength(time);
       const length = N.cmp(m.length, ZERO) > 0 ? m.length : full;
       const longer = N.cmp(length, full);
       if (longer > 0) throw never('박자보다 긴 마디');
-      if (longer < 0) {
-        if (i === 0) pickup = true;
-        else if (i !== measures.length - 1) throw later('곡 중간의 짧은 마디');
-      }
+      if (longer < 0 && i === 0) pickup = true;
 
       const notes = [];
+      const starts = []; // where each note starts in the measure
       let cursor = ZERO;
+      const fill = (gap) => {
+        for (const rest of restsFor(gap)) {
+          starts.push(cursor);
+          notes.push(rest);
+          cursor = N.add(cursor, N.duration(rest));
+        }
+      };
       for (const event of events) {
         const gap = N.cmp(event.start, cursor);
         if (gap < 0) throw never('한 성부 안에서 겹치는 음');
-        if (gap > 0) notes.push(...restsFor(N.sub(event.start, cursor)));
+        if (gap > 0) fill(N.sub(event.start, cursor));
+        starts.push(event.start);
         const rest = childOf(event.element, 'rest');
         // A measure rest: marked as one, or a rest filling the whole measure with no type or the whole-rest type
         // (older files write a whole rest for a full measure in any time).
         const type = childText(event.element, 'type');
         const wholeMeasure = rest && (rest.getAttribute('measure') === 'yes'
           || ((!type || type === 'whole') && N.cmp(event.start, ZERO) === 0 && N.cmp(event.duration, length) === 0));
-        if (wholeMeasure) notes.push(...restsFor(event.duration));
-        else notes.push(noteOf(event.element, event.duration, interval));
-        cursor = N.add(event.start, event.duration);
+        if (wholeMeasure) {
+          starts.pop();
+          fill(event.duration);
+        } else {
+          notes.push(noteOf(event.element, event.duration, interval));
+          cursor = N.add(event.start, event.duration);
+        }
       }
       if (N.cmp(cursor, length) > 0) throw never('박자보다 긴 마디');
-      if (N.cmp(cursor, length) < 0) notes.push(...restsFor(N.sub(length, cursor)));
+      if (N.cmp(cursor, length) < 0) fill(N.sub(length, cursor));
       markTuplets(notes);
+
+      // Changes inside the measure go on the first note at or after them; one after the last note starts the next
+      // measure instead.
+      inside.sort((a, b) => N.cmp(a.start, b.start));
+      for (const change of inside) {
+        const k = starts.findIndex((start) => N.cmp(start, change.start) >= 0);
+        if (k < 0) {
+          if (change.clef) pending.clef = change.clef;
+          continue;
+        }
+        if (change.clef) notes[k].clef = change.clef;
+        if (change.tempo !== undefined) notes[k].tempo = change.tempo;
+      }
+      for (const note of notes) {
+        if (note.clef) endClef = note.clef;
+        if (note.tempo !== undefined) tempo = note.tempo;
+      }
       measure.notes = notes;
       out.push(measure);
     });
 
     const dropped = pairTies(out.flatMap((m) => m.notes));
     if (dropped) notices.add(`이어질 음이 없는 붙임줄 ${dropped}개는 뺐어요`);
-    for (const m of out) m.notes = m.notes.map(({ tieStart, tieStop, bracketStarts, bracketStops, ...note }) => note);
+    for (const m of out) m.notes = m.notes.map(({ tieStart, tieStop, bracketStarts, bracketStops, whole, depth, ...note }) => note);
 
-    // Measure numbers as printed, kept when they run on from the first one.
-    const first = Number(measures[0].number);
-    if (!Number.isInteger(first) || !measures.every((m, i) => Number(m.number) === first + i)) throw later('마디 번호가 이어지지 않음');
+    // Measure numbers as printed. Implicit measures (after the first) aren't counted; the counted ones must run on.
+    // An implicit pickup takes the number before the first counted measure.
+    const counted = measures.filter((m, i) => !(m.implicit && i > 0)).map((m) => Number(m.number));
+    const pickupImplicit = measures[0].implicit && counted.length > 1;
+    const first = pickupImplicit ? counted[1] - 1 : counted[0];
+    const run = counted.every((n, k) => (k === 0 && pickupImplicit) || n === first + k);
+    if (!Number.isInteger(first) || first < 0 || !run) throw never('마디 번호가 이어지지 않음');
     const score = { id: 'import', title: listed.title.slice(0, N.MAX_TITLE), pickup, measures: out };
-    if (first !== (pickup ? 0 : 1) && first >= 0) score.firstNumber = first;
+    if (first !== (pickup ? 0 : 1)) score.firstNumber = first;
     if (!N.isValid(score)) throw new ImportError('악보를 옮기지 못했어요.');
     return { score: N.clean(score), notices: [...notices] };
   }

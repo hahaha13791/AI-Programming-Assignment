@@ -15,8 +15,6 @@
   const KEY_STEP = 10;
   const STEPS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
   const STEP_INDEX = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6 };
-  const BOTTOM = { treble: 4 * 7 + 2, bass: 2 * 7 + 4 }; // E4, G2 as diatonic numbers
-  const CLEF_GLYPH = { treble: '\u{1D11E}', bass: '\u{1D122}' };
   const SIGNS = { 2: '\u{1D12A}', 1: '♯︎', 0: '♮︎', '-1': '♭︎', '-2': '\u{1D12B}' };
   const LABEL_SIGNS = { 2: '𝄪', 1: '#', '-1': '♭', '-2': '𝄫' };
   const SOLFEGE = ['도', '레', '미', '파', '솔', '라', '시'];
@@ -70,11 +68,11 @@
     const yOf = (pos) => PAD + (high - pos) * HALF;
     const staffHeight = () => PAD * 2 + (high - low) * HALF;
     const slotX = (i) => SLOT_PAD + SLOT * (i + 0.5);
-    const posOf = (pitch) => diatonic(pitch) - BOTTOM[clef];
+    const posOf = (pitch) => diatonic(pitch) - Sheet.clefBottom(clef);
 
     // What a press at this position enters: the key signature's pitch, or the toggle's accidental instead.
     function pitchAt(pos) {
-      const base = fromDiatonic(pos + BOTTOM[clef]);
+      const base = fromDiatonic(pos + Sheet.clefBottom(clef));
       const alter = toggle ?? (Sheet.keyAlters(key)[base.step] ?? 0);
       return { step: base.step, alter, octave: base.octave };
     }
@@ -117,8 +115,7 @@
       fixed.style.height = `${height}px`;
       fixed.replaceChildren();
       drawLines(fixed, width);
-      const clefY = clef === 'treble' ? yOf(0) + 2 : yOf(4) + 23;
-      fixed.append(svgEl('text', { x: 2, y: clefY, class: 'staff-clef', 'data-clef': clef }, CLEF_GLYPH[clef]));
+      Sheet.drawClef(fixed, clef, 2, yOf, false);
       Sheet.keySigns(key, clef).forEach((sign, i) => {
         fixed.append(svgEl('text', {
           x: PREFIX_CLEF + i * KEY_STEP + KEY_STEP - 1, y: yOf(sign.pos) + 5, class: 'sv-accidental sv-key', 'data-pos': sign.pos,
@@ -226,8 +223,9 @@
         clef = options.clef;
         key = options.key;
         const [lo, hi] = options.range.map(posOf);
-        low = Math.min(lo - MARGIN, -2);
-        high = Math.max(hi + MARGIN, TOP_LINE + 2);
+        // Room for an octave clef's 8 below or above the staff too.
+        low = Math.min(lo - MARGIN, clef.endsWith('8vb') ? -5 : -2);
+        high = Math.max(hi + MARGIN, TOP_LINE + (clef.endsWith('8va') ? 5 : 2));
         capacity = options.capacity;
         notes = [];
         marks = null;
