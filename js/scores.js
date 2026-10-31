@@ -3,6 +3,10 @@
   // ({ id, title, time, notes: [{ type, step, accidental }] }) under its own key; those are moved over on load.
   const STORAGE_KEY = 'ltw.scores.v2';
   const V1_KEY = 'ltw.scores.v1';
+  // The examples a stored list has been offered, so one added later shows up once (and stays gone if deleted).
+  // Written together with the list. A list stored before this key existed was offered the first four.
+  const EXAMPLES_KEY = 'ltw.examples.v1';
+  const FIRST_EXAMPLES = ['example-twinkle', 'example-fur-elise', 'example-greensleeves', 'example-mountain-king'];
   const MAX_MEASURES = 12; // the editor's limit until it grows (expansion 7); stored scores have none
   const MAX_TITLE = 30;
   const V1_TOP_STEP = 11; // G5
@@ -134,7 +138,9 @@
         notice = NOTICES.unreadable;
       } else {
         const { kept, dropped } = keep(parsed, isValid, copy);
-        scores = kept;
+        const offered = new Set((storage && readList(EXAMPLES_KEY)) || FIRST_EXAMPLES);
+        const ids = new Set(kept.map((score) => score.id));
+        scores = [...kept, ...examples().filter((score) => !offered.has(score.id) && !ids.has(score.id))];
         if (dropped) notice = NOTICES.dropped(dropped);
       }
     }
@@ -143,6 +149,7 @@
       if (!storage) return false;
       try {
         storage.setItem(STORAGE_KEY, JSON.stringify(scores));
+        storage.setItem(EXAMPLES_KEY, JSON.stringify(window.EXAMPLE_SCORES.map((score) => score.id)));
         // The whole list is now stored, so an earlier failure or dropped score no longer needs a notice.
         notice = null;
         return true;
@@ -183,5 +190,5 @@
     return `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
   }
 
-  window.Scores = { open, isValid, isV1Valid, examples, STORAGE_KEY, V1_KEY, MAX_MEASURES, MAX_TITLE };
+  window.Scores = { open, isValid, isV1Valid, examples, STORAGE_KEY, V1_KEY, EXAMPLES_KEY, MAX_MEASURES, MAX_TITLE };
 })();

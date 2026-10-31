@@ -40,4 +40,14 @@ window.EXAMPLE_SCORES = [
     music: `B2:8 C#3:8 D3:8 E3:8 F#3:8 D3:8 F#3:q | E#3:8 C#3:8 E#3:q E3:8 C3:8 E3:q
       | B2:8 C#3:8 D3:8 E3:8 F#3:8 D3:8 F#3:8 B3:8 | A3:8 F#3:8 D3:8 F#3:8 A3:h`,
   }),
+  // Not a real song: a short study made for this app, to show (and practise) ties — within a measure and across
+  // a barline — triplets of eighths and quarters, and a change of key (C to G major) and time (4/4, 3/4, 6/8).
+  Notation.build({
+    id: 'example-rhythm-etude',
+    title: '리듬 표기 연습곡 (이 앱용)',
+    time: [4, 4], key: { fifths: 0, mode: 'major' }, clef: 'treble', tempo: 90,
+    music: `C5:q E5:8 G5:8~ G5:h | 3[ F5:8 E5:8 D5:8 ] C5:q~ C5:q B4:q | A4:q. B4:8 C5:h~ | C5:q 3[ D5:q E5:q F5:q ] G5:q
+      | G5:q F#5:8 E5:8 D5:h | E5:8 F#5:8 G5:q~ G5:8 r:8 | D5:8 C5:8 B4:8 A4:q.~ | A4:q. G4:q.`,
+    changes: { 4: { key: { fifths: 1, mode: 'major' } }, 5: { time: [3, 4] }, 6: { time: [6, 8] } },
+  }),
 ];

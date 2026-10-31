@@ -94,9 +94,11 @@ T.test('27-4 저장소: 첫 방문·v2', async (T) => {
   const ids = empty.list().map((s) => s.id);
   T.check(eq(ids, EXAMPLE_SCORES.map((s) => s.id)), `빈 저장소 → 예시 ${ids.length}곡`);
   const kept = N.clean(N.fromLegacy(V1_RICH));
-  const stored = memoryStorage({ [Scores.STORAGE_KEY]: JSON.stringify([kept]) });
+  // From TODO 34 a stored list remembers which examples it was offered; these lists have seen them all.
+  const SEEN = JSON.stringify(EXAMPLE_SCORES.map((s) => s.id));
+  const stored = memoryStorage({ [Scores.STORAGE_KEY]: JSON.stringify([kept]), [Scores.EXAMPLES_KEY]: SEEN });
   T.check(eq(Scores.open(stored).list(), [kept]), 'v2 저장소가 있으면 예시를 다시 넣지 않음');
-  const none = memoryStorage({ [Scores.STORAGE_KEY]: '[]' });
+  const none = memoryStorage({ [Scores.STORAGE_KEY]: '[]', [Scores.EXAMPLES_KEY]: SEEN });
   T.check(Scores.open(none).list().length === 0, '모두 지운 빈 목록이면 예시가 다시 생기지 않음');
 });
 
@@ -123,7 +125,8 @@ T.test('27-4 저장소: 깨진 값', async (T) => {
   T.check(v1.get('old-1') && !v1.get('old-2') && v1.notice() === '예전 악보 1개를 옮기지 못했어요.', `깨진 v1 악보만 빠지고 안내 ("${v1.notice()}")`);
   const good = N.clean(N.fromLegacy(V1_RICH));
   const bad = { ...good, id: 'x', measures: [{ ...good.measures[0], notes: [{ type: 'quarter', dots: 0, pitch: { step: 'H', alter: 0, octave: 4 } }] }] };
-  const v2 = Scores.open(memoryStorage({ [Scores.STORAGE_KEY]: JSON.stringify([good, bad, 'junk']) }));
+  const v2 = Scores.open(memoryStorage({ [Scores.STORAGE_KEY]: JSON.stringify([good, bad, 'junk']),
+    [Scores.EXAMPLES_KEY]: JSON.stringify(EXAMPLE_SCORES.map((s) => s.id)) }));
   T.check(v2.list().length === 1 && v2.notice() === '읽지 못한 악보 2개를 뺐어요.', `깨진 v2 악보만 빠지고 안내 ("${v2.notice()}")`);
   const unreadable = Scores.open(memoryStorage({ [Scores.STORAGE_KEY]: '{oops' }));
   T.check(unreadable.list().length === 0 && unreadable.notice() === '저장된 악보를 읽지 못했어요.', '읽을 수 없는 v2 값은 안내');
