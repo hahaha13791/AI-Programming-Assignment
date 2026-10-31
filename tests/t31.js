@@ -145,7 +145,7 @@ T.test('31-4 악보마다 기억', async (T) => {
   Sound.stop();
   chooseScore('example-greensleeves');
   const g = playRange();
-  T.check(g.start === 2 && g.end === 5 && T.$('btn-question').disabled === false, '연습이 잠긴 악보도 고른 구간을 들을 수 있음');
+  T.check(g.start === 2 && g.end === 5 && T.$('btn-question').disabled === false, '다른 악보도 고른 구간을 들음');
   forget();
   chooseScore('example-twinkle');
   T.setMode('melody');

@@ -159,10 +159,14 @@ T.test('27-6 반짝반짝 작은 별: 확장 4와 같음', async (T) => {
   T.check(scoreId === 'example-twinkle', '처음 고른 악보는 반짝반짝 작은 별');
   const old = Score.sections(v1Twinkle()).map((item) => ({ ...item, time: 4 }));
   // From TODO 31 sections are chosen on the strip; the default (first two measures) is expansion 4's first section.
-  // From TODO 32 the section holds its pitches in v2 form too; its measures and notes are expansion 4's first section.
-  T.check(section.start === old[0].start && section.end === old[0].end && section.label === old[0].label && eq(section.notes, old[0].notes),
-    `기본 구간이 확장 4의 첫 구간과 같음 (${section.label})`);
-  T.check(eq(Score.schedule(section.notes), Score.schedule(old[0].notes)), '재생 시각·음높이가 확장 4와 같음');
+  // From TODO 32/33 the section is v2 (its pitches and an excerpt to draw); its measures and pitches are expansion 4's.
+  const oldPitches = old[0].notes.filter((n) => n.type !== 'r').map(Staff.noteToMidi);
+  T.check(section.start === old[0].start && section.end === old[0].end && section.label === old[0].label
+    && eq(current.map(Notation.midi), oldPitches), `기본 구간이 확장 4의 첫 구간과 같음 (${section.label})`);
+  const v2 = Playback.schedule(scores.get(scoreId), { start: section.start, end: section.end, tonic: false });
+  const v1 = Score.schedule(old[0].notes, { tonic: false });
+  T.check(v2.events.length === v1.events.length && v2.events.every((e, i) => Math.abs(e.start - v1.events[i].start) < 1e-9
+    && e.midi === v1.events[i].midi), '재생 시각·음높이가 확장 4와 같음');
   T.check(await T.listen(), '재생 후 입력 풀림');
   T.enterNotes(current);
   T.submit();
@@ -181,8 +185,8 @@ T.test('27-6 편집기 범위 밖 예시', async (T) => {
     const button = T.$('btn-edit-score');
     T.check(!button.disabled && button.textContent === '삭제' && button.dataset.action === 'delete', `${id}: [편집] 자리가 [삭제]`);
     T.check(!T.$('score-notice').hidden && T.$('score-notice').textContent.includes('편집할 수 없어요'), `이유 안내: "${T.$('score-notice').textContent}"`);
-    // From TODO 30 the question can be heard (first two measures), but input stays locked until TODO 33.
-    T.check(T.$('staff-hint').textContent.includes('곧 그려져요') && current === null, '연습은 임시로 잠김');
+    // The practice lock (TODO 27~32) is gone from TODO 33: only editing waits for expansion 7.
+    T.check(current && current.length > 0 && !T.$('btn-question').disabled, '연습은 할 수 있음 (편집만 확장 7까지 막힘)');
     T.check(Math.abs(head() - before) < 0.5, `안내가 보여도 패널 머리 높이가 같음 (${head().toFixed(1)}px)`);
   }
   T.$('score-select').value = 'example-twinkle';

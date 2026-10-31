@@ -71,7 +71,10 @@ T.test('30-2 반짝반짝 작은 별은 확장 4와 같게', async (T) => {
   T.setMode('score');
   const spy = spyPlay();
   T.check(await T.listen(), '재생 후 입력 풀림');
-  const old = Score.schedule(section.notes, { tonic: true });
+  // Expansion 4 played the same measures from its own (v1) notes.
+  const legacy = Notation.toLegacy(scores.get(scoreId));
+  const oldNotes = Score.splitMeasures(legacy.notes, legacy.time).slice(section.start, section.end + 1).flat();
+  const old = Score.schedule(oldNotes, { tonic: true });
   const got = spy.calls[0];
   spy.restore();
   const same = got && got.events.length === old.events.length && got.events.every((e, i) =>
@@ -80,7 +83,7 @@ T.test('30-2 반짝반짝 작은 별은 확장 4와 같게', async (T) => {
   T.setMode('melody');
 });
 
-T.test('30-2 잠긴 새 예시도 처음 2마디 듣기', async (T) => {
+T.test('30-2 새 예시 처음 2마디 듣기', async (T) => {
   T.setMode('score');
   const select = T.$('score-select');
   select.value = 'example-fur-elise';
@@ -93,8 +96,9 @@ T.test('30-2 잠긴 새 예시도 처음 2마디 듣기', async (T) => {
   const expected = Playback.schedule(elise, { start: 0, end: 1, tonic: true });
   T.check(spy.calls.length === 1 && spy.calls[0].events.length === expected.events.length, `못갖춘마디 + 1마디가 재생됨 (음 ${expected.events.length - 1}개 + 기준음)`);
   await T.wait(expected.total * 1000 + 200);
-  T.check(staff && T.$('score-preview').hidden === false && current === null && T.$('staff-hint').textContent.includes('곧 그려져요'),
-    '재생이 끝나도 입력은 열리지 않음 (33단계까지)');
+  // The lock until TODO 33 is gone: input opens after the playback.
+  T.check(current && current.length === expected.events.length - 1 && !scoreInput.svg.classList.contains('is-locked'),
+    '재생이 끝나면 받아 적기가 열림');
   T.check(!T.$('btn-replay').disabled, '다시 듣기는 누를 수 있음');
   select.value = 'example-twinkle';
   select.dispatchEvent(new Event('change'));

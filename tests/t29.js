@@ -115,20 +115,16 @@ T.test('29-4 줄 나누기와 겹침', async (T) => {
   box.remove();
 });
 
-T.test('29-4 예시 악보 미리 보기', async (T) => {
-  T.setMode('score');
-  const select = T.$('score-select');
+// The examples drawn whole (the preview this checked until TODO 33 is gone; the drawing is the same).
+T.test('29-4 예시 악보 전체', async (T) => {
+  const preview = box29();
   for (const id of ['example-fur-elise', 'example-greensleeves', 'example-mountain-king']) {
-    select.value = id;
-    select.dispatchEvent(new Event('change'));
-    const preview = T.$('score-preview');
+    Sheet.draw(preview, EXAMPLE_SCORES.find((s) => s.id === id));
     const count = preview.querySelectorAll('.sv-note').length;
     const expected = EXAMPLE_SCORES.find((s) => s.id === id).measures.flatMap((m) => m.notes).length;
     T.check(count === expected, `${id}: 음표·쉼표 ${count}/${expected}개가 모두 그려짐`);
     T.check(T.noHorizontalOverflow() && [...preview.querySelectorAll('.sheet-row')].every((r) => r.scrollWidth <= r.clientWidth + 1),
       '페이지·줄 모두 가로 스크롤 없음');
   }
-  select.value = 'example-twinkle';
-  select.dispatchEvent(new Event('change'));
-  T.setMode('melody');
+  preview.remove();
 });

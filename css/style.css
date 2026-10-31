@@ -373,6 +373,23 @@ button:focus-visible {
   stroke: var(--accent);
 }
 
+/* 내 악보 result: the answer section in one row, and its solfège, scroll sideways when long. */
+.answer-sheet {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.answer-chips.is-scroll {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.answer-chips.is-scroll .note-chip {
+  flex: none;
+}
+
 .score-strip {
   overflow-x: auto;
   overflow-y: hidden;

@@ -70,7 +70,8 @@ T.test('28-2 바뀜이 그 마디에', async (T) => {
   box.remove();
 });
 
-T.test('28-2 잠긴 새 예시의 악보 미리 보기 (28-1a)', async (T) => {
+// 28-1a's preview was temporary (until TODO 33): new examples now open for practice in the same place.
+T.test('28-2 새 예시를 고르면 받아 적기 (28-1a는 33단계에서 없앰)', async (T) => {
   T.setMode('score');
   const select = T.$('score-select');
   const top = () => T.$('staff-title').getBoundingClientRect().top;
@@ -78,16 +79,14 @@ T.test('28-2 잠긴 새 예시의 악보 미리 보기 (28-1a)', async (T) => {
   for (const id of ['example-fur-elise', 'example-greensleeves', 'example-mountain-king']) {
     select.value = id;
     select.dispatchEvent(new Event('change'));
-    const preview = T.$('score-preview');
-    T.check(!preview.hidden && preview.querySelector('.sheet .sheet-svg') && T.$('staff-area').hidden, `${id}: 미리 보기가 보이고 입력 오선은 숨음`);
+    T.check(!document.getElementById('score-preview') && !T.$('score-input').hidden && T.$('staff-area').hidden, `${id}: 받아 적기 오선이 보임`);
     T.check(Math.abs(top() - before) < 0.5, '받아 적기 영역 위치가 그대로');
     T.check(T.noHorizontalOverflow(), '페이지 가로 스크롤 없음');
   }
   select.value = 'example-twinkle';
   select.dispatchEvent(new Event('change'));
-  T.check(T.$('score-preview').hidden && !T.$('score-input').hidden, '연습할 수 있는 악보로 돌아오면 미리 보기가 사라지고 받아 적기 오선이 보임');
   T.setMode('melody');
-  T.check(T.$('score-preview').hidden && !T.$('staff-area').hidden, '다른 모드에서는 미리 보기가 없음');
+  T.check(!T.$('staff-area').hidden && T.$('score-input').hidden, '다른 모드에서는 원래 오선');
 });
 
 T.test('28-4 조표 기준 임시표', async (T) => {

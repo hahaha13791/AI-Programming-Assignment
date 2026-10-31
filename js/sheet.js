@@ -527,21 +527,22 @@
     return { svg, width: end + RIGHT_PAD, height };
   }
 
-  // The whole score in one row of a fixed height (px), for choosing measures: every measure numbered, a press
-  // area over each, the chosen ones highlighted. options: { height, selected: { start, end }, pending (index) }.
-  // The box scrolls sideways; returns the SVG.
+  // A score in one row that scrolls sideways (the box does), every measure numbered. For choosing measures
+  // (options.hit: a press area over each, the selected ones highlighted, a pending start marked) and for the
+  // answer section. Sized by a fixed height (px) or a scale (px per unit). Returns the SVG.
+  // options: { height | scale, hit, selected: { start, end }, pending (index), label }
   function strip(container, score, options = {}) {
     const measures = N.resolve(score);
     const infos = measures.map((measure, i) => measureInfo(measure, i, i ? measures[i - 1] : null));
     const natural = STAFF_LEFT + RIGHT_PAD + infos.reduce((sum, info, k) => sum + info.min * 1.25 + prefixWidth(info, k === 0), 0);
     const { svg, width, height } = drawRow(infos, 0, natural, true, 0, {
-      numberFirst: true, numberAll: true, hit: true, selected: options.selected, pending: options.pending,
+      numberFirst: true, numberAll: true, hit: options.hit ?? true, selected: options.selected, pending: options.pending,
     });
-    const scale = (options.height ?? 80) / height;
+    const scale = options.scale ?? (options.height ?? 80) / height;
     svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
     svg.classList.add('sheet-strip');
     svg.style.width = `${Math.round(width * scale)}px`;
-    svg.style.height = `${options.height ?? 80}px`;
+    svg.style.height = `${Math.round(height * scale)}px`;
     svg.setAttribute('role', 'img');
     svg.setAttribute('aria-label', options.label ?? `악보 띠, ${score.title}`);
     container.replaceChildren(svg);

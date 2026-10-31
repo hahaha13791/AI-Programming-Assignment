@@ -65,7 +65,7 @@
         clef: measure.clef ?? attrs.clef,
         tempo: measure.tempo ?? attrs.tempo,
       };
-      return { ...attrs, notes: measure.notes, number: score.pickup ? i : i + 1 };
+      return { ...attrs, notes: measure.notes, number: (score.firstNumber ?? (score.pickup ? 0 : 1)) + i };
     });
   }
 
@@ -189,6 +189,23 @@
         out.notes = m.notes.map(note);
         return out;
       }),
+    };
+  }
+
+  // Measures start..end as a score of their own, for drawing a section: its first measure carries the clef, key,
+  // time and tempo in force there, and the measures keep their numbers (firstNumber). Not for storing: a tie into or
+  // out of the section is left as it is (drawn as half a tie).
+  function excerpt(score, start, end) {
+    const measures = resolve(score);
+    const first = measures[start];
+    return {
+      id: score.id,
+      title: score.title,
+      pickup: score.pickup && start === 0,
+      firstNumber: first.number,
+      measures: score.measures.slice(start, end + 1).map((m, i) => (i === 0
+        ? { time: first.time, key: first.key, clef: first.clef, tempo: first.tempo, notes: m.notes }
+        : m)),
     };
   }
 
@@ -334,7 +351,7 @@
     TYPES, STEPS, MAX_TITLE,
     frac, add, sub, mul, cmp, toNumber, ZERO,
     duration, midi, measureLength, filled, resolve,
-    isValid, clean,
+    isValid, clean, excerpt,
     fromLegacy, toLegacy, legacyProblem,
     parseMeasures, build,
   };

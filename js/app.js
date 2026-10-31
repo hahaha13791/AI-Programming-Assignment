@@ -48,8 +48,6 @@ const MODES = {
       input: '들은 음을 오선에 순서대로 찍어 보세요. 리듬은 적지 않아요.',
       empty: "저장된 악보가 없어요. '새 악보'로 만들어 보세요.",
       noNotes: "이 악보에는 음이 없어요. '편집'에서 음을 넣어 보세요.",
-      // Until practice works on v2 scores (TODO 33), scores beyond the expansion 4 range wait.
-      pending: '이 악보는 곧 그려져요. 지금은 다른 악보로 연습해 주세요.',
       restOnly: '이 구간에는 음이 없어요. 다른 마디를 골라 보세요.',
     },
   },
@@ -341,7 +339,6 @@ function practiceSection() {
   const score = chosenScore();
   const sel = selection(score);
   if (!score || !sel) return { section: null, reason: scoreId ? 'noNotes' : 'empty' };
-  if (scoreEditProblem()) return { section: null, reason: 'pending' };
   const measures = Notation.resolve(score);
   // The pitches to write down: every sounding note once (a tied note once, where it starts).
   const answer = measures.slice(sel.start, sel.end + 1).flatMap((m) => m.notes)
@@ -350,13 +347,11 @@ function practiceSection() {
   const all = score.measures.flatMap((m) => m.notes).filter((note) => !note.rest).map((note) => note.pitch);
   const byPitch = (a, b) => Notation.midi(a) - Notation.midi(b);
   const sorted = [...all].sort(byPitch);
-  // Until results draw v2 (TODO 33), the answer section is drawn from the expansion 4 shape.
-  const legacy = Notation.toLegacy(score);
   return {
     section: {
       start: sel.start, end: sel.end, answer, label: measureLabel(score, sel.start, sel.end),
       clef: measures[sel.start].clef, key: measures[sel.start].key, range: [sorted[0], sorted[sorted.length - 1]],
-      notes: Score.splitMeasures(legacy.notes, legacy.time).slice(sel.start, sel.end + 1).flat(), time: legacy.time,
+      sheet: Notation.excerpt(score, sel.start, sel.end),
     },
   };
 }
@@ -470,16 +465,6 @@ function pick(pool, previous) {
   return candidates[Math.floor(Math.random() * candidates.length)];
 }
 
-// Until practice works on v2 scores (TODO 33), a score that can't be practised yet is shown whole in place of
-// the input staff, so its drawing can be checked. The 받아 적기 panel keeps its place.
-function showScorePreview(score) {
-  const preview = $('score-preview');
-  preview.hidden = !score;
-  if (score) $('score-input').hidden = true;
-  if (score) Sheet.draw(preview, score, { label: `악보 미리 보기, ${score.title}` });
-  else preview.replaceChildren();
-}
-
 function newQuestion() {
   Sound.stop();
   clearTimeout(unlockTimer);
@@ -521,10 +506,8 @@ function newQuestion() {
     current = pick(PATTERNS[level], current);
     staff.reset(current.length);
   }
-  $('btn-question').disabled = !current && !(mode === 'score' && playRange());
+  $('btn-question').disabled = !current;
   $('btn-tonic').textContent = `기준음(${mode === 'score' ? scoreTonic().label : '도'}) 듣기`;
-  const waiting = mode === 'score' && scoreId && scoreEditProblem();
-  showScorePreview(waiting ? scores.get(scoreId) : null);
   setHint(current ? 'ready' : mode === 'score' ? scoreReason : 'empty');
 }
 
@@ -539,6 +522,9 @@ function element(tag, className, text) {
 function scoreLabel(pitch) {
   return ScoreInput.label(pitch, section.key, Settings.get('solfege'));
 }
+
+// The answer section is drawn at this many px per unit (the score view's size on a phone).
+const ANSWER_SCALE = 0.85;
 
 function chipsOf(notes, marks, name = Staff.noteLabel) {
   const chips = element('div', 'note-preview answer-chips');
@@ -600,12 +586,20 @@ function renderResult(result) {
       ? `${marks.length}음 모두 정답이에요!`
       : `${marks.length}음 중 ${correct}음 정답`));
     if (mode === 'score') {
-      // The section as written, rhythm included: the notes were heard in it.
+      // The section as written (clef, key and time where it starts, its rhythm and measure numbers): the notes
+      // were heard in it. One row that scrolls sideways when long, like the solfège under it.
       parts.push(element('h3', 'answer-title', `정답 구간 (${section.label})`));
-      Score.draw(answerStaff, { time: section.time, notes: section.notes }, {
+      answerStaff.classList.add('answer-sheet');
+      parts.push(answerStaff);
+      const chips = chipsOf(current, marks.map((mark) => mark || undefined), scoreLabel);
+      chips.classList.add('is-scroll');
+      parts.push(chips);
+      area.replaceChildren(...parts, nextButton());
+      Sheet.strip(answerStaff, section.sheet, {
+        scale: ANSWER_SCALE, hit: false,
         label: `정답 구간 악보, ${section.label}. ${current.map(scoreLabel).join(' ')}`,
       });
-      parts.push(answerStaff, chipsOf(current, null, scoreLabel));
+      return;
     } else {
       parts.push(element('h3', 'answer-title', '정답 멜로디'));
       Staff.draw(answerStaff, current, '정답 멜로디 오선');
@@ -691,7 +685,7 @@ function playRhythm() {
   return Sound.playEvents(events, total);
 }
 
-// The measures 내 악보 plays: the chosen section (also when it can't be practised yet, so it can be heard).
+// The measures 내 악보 plays: the chosen section.
 function playRange() {
   const sel = selection();
   return sel && soundingCount(chosenScore(), sel.start, sel.end) ? { start: sel.start, end: sel.end } : null;
@@ -715,11 +709,6 @@ function playQuestion() {
 
 $('btn-question').addEventListener('click', () => {
   const seconds = playQuestion();
-  if (!current) {
-    // A score that can't be practised yet (until TODO 33) can be heard, but nothing opens for input.
-    $('btn-replay').disabled = false;
-    return;
-  }
   if (!$('btn-replay').disabled) return;
   setHint('listening');
   clearTimeout(unlockTimer);
