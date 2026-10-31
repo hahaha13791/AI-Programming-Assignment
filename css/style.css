@@ -856,6 +856,16 @@ button:focus-visible {
   stroke-width: 1.4;
 }
 
+/* Grace notes (sheet.js draws them at 0.65 size). */
+.sv-stem.is-grace,
+.sv-grace-slash {
+  stroke-width: 1;
+}
+
+.sheet-svg .sv-accidental.is-grace {
+  font-size: 13px;
+}
+
 .sv-rest {
   fill: none;
   stroke: currentColor;

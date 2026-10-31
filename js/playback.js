@@ -6,6 +6,8 @@
   const NOTE_SHARE = 0.9; // a note sounds for this share of its length
   const NOTE_PEAK = 0.3;
   const CHORD_PEAK = 0.5; // a chord's notes share this, so many at once don't distort (as in harmony mode)
+  // Grace notes sound just before the note they lead to (which keeps its beat), each this long (at speed 1).
+  const GRACE_LENGTH = 0.09;
   const TONIC_LENGTH = 0.7;
   // The tonic, then a pause as long as melody mode's: tonic 0.7s + gap 0.15s + a silent beat 0.7s + gap 0.15s.
   const LEAD_IN = 1.7;
@@ -44,8 +46,25 @@
     const events = tonic ? [{ start: 0, length: TONIC_LENGTH, midi: tonicOf(score, start, end, line).midi, peak: NOTE_PEAK, sustain: false }] : [];
     let time = tonic ? LEAD_IN : 0;
     let total = time;
+    // Grace notes waiting for the note they lead to: they are placed back from its start.
+    let graces = [];
+    const placeGraces = () => {
+      const step = GRACE_LENGTH / speed;
+      graces.forEach((grace, n) => {
+        const at = time - (graces.length - n) * step;
+        for (const pitch of grace.pitches) {
+          events.push({ start: at, length: step * 0.95, midi: N.midi(pitch.pitch), peak: Math.min(NOTE_PEAK, CHORD_PEAK / grace.pitches.length), sustain: true });
+        }
+      });
+      graces = [];
+    };
     all.forEach((item, k) => {
       if (item.m < start || item.m > end) return;
+      if (item.note.grace) {
+        graces.push({ pitches: N.pitchesOf(item.note) });
+        return;
+      }
+      placeGraces();
       const length = seconds(item.note, item.tempo, speed);
       // Each pitch of a chord sounds on its own: a tied one goes on through the notes its tie reaches.
       const pitches = N.pitchesOf(item.note);
@@ -67,8 +86,16 @@
       time += length;
       total = Math.max(total, time);
     });
+    placeGraces(); // grace notes at the very end lead to nothing after them: they sound before the end
+    // Grace notes before the first note may start before 0: everything moves later by that much.
+    const early = Math.min(0, ...events.map((e) => e.start));
+    if (early < 0) {
+      for (const event of events) event.start -= early;
+      total -= early;
+    }
+    events.sort((a, b) => a.start - b.start);
     return { events, total };
   }
 
-  window.Playback = { schedule, tonicOf, LEAD_IN, NOTE_SHARE, NOTE_PEAK, CHORD_PEAK };
+  window.Playback = { schedule, tonicOf, LEAD_IN, NOTE_SHARE, NOTE_PEAK, CHORD_PEAK, GRACE_LENGTH };
 })();

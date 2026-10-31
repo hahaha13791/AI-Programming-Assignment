@@ -117,6 +117,10 @@
   }
 
   const HEAD_W = 2 * HEAD_RX - 1; // a head set to the other side of the stem (a second in a chord)
+  // Grace notes are drawn at this size, with these widths.
+  const GRACE_SCALE = 0.65;
+  const GRACE_STEM = 5; // steps
+  const GRACE = { head: 10, accidental: 8, flag: 6, gap: 2 };
 
   // A chord's heads, low to high, with the side each goes (a second puts one head on the other side of the stem:
   // the upper one to the right with the stem up, the lower one to the left with it down), and the column of each
@@ -151,6 +155,7 @@
     let start = 0;
     let tuplet = -1;
     notes.forEach((note, i) => {
+      if (note.grace) return; // grace notes are beamed among themselves (graceBeams)
       if (note.tupletStart) tuplet = i;
       const inTuplet = note.tuplet ? tuplet : -1;
       const beat = Math.floor(start / unit + 1e-9);
@@ -165,6 +170,22 @@
     });
     if (current) groups.push(current.members);
     return groups.filter((members) => members.length > 1);
+  }
+
+  // Grace notes in a row with flags share a small beam: arrays of note indices, two or more each.
+  function graceGroups(notes) {
+    const groups = [];
+    let current = [];
+    notes.forEach((note, i) => {
+      if (note.grace && FLAGS[note.type]) {
+        current.push(i);
+        return;
+      }
+      if (current.length > 1) groups.push(current);
+      current = [];
+    });
+    if (current.length > 1) groups.push(current);
+    return groups;
   }
 
   // Tuplet groups: [first, last, level] note indices; level 2 is a tuplet inside a tuplet.
@@ -202,6 +223,14 @@
       })).sort((a, b) => a.pos - b.pos);
       const top = heads[heads.length - 1].pos;
       const bottom = heads[0].pos;
+      // Grace notes: small, stems always up, short.
+      if (note.grace) {
+        const written = heads.find((h) => h.written);
+        return {
+          note, heads, top, bottom, pos: written.pos, stem: 1, stemEnd: top + GRACE_STEM + Math.max(0, (FLAGS[note.type] ?? 0) - 1) * 0.7,
+          beam: null, accidental: written.accidental, clefChange, grace: true,
+        };
+      }
       const stem = stemOf(note, top, bottom);
       // Where the stem ends, in steps: flags of short notes need a longer stem.
       const length = STEM + Math.max(0, (FLAGS[note.type] ?? 0) - 1);
@@ -226,8 +255,25 @@
       return { members, dir, end, levels };
     });
 
+    // Grace beams: one level stem end for the group.
+    const graceBeams = graceGroups(measure.notes).map((members) => {
+      const items = members.map((i) => notes[i]);
+      const levels = Math.max(...items.map((item) => FLAGS[item.note.type]));
+      const end = Math.max(...items.map((item) => item.top)) + GRACE_STEM + (levels - 1) * 0.7;
+      items.forEach((item, k) => Object.assign(item, { stemEnd: end, beam: members, beamFirst: k === 0 }));
+      return { members, dir: 1, end, levels, grace: true };
+    });
+
     for (const item of notes) {
       const columns = layoutHeads(item.heads, item.stem);
+      if (item.grace) {
+        const rightHead = item.heads.some((h) => h.offset === 1);
+        const left = columns * GRACE.accidental + (item.clefChange ? SMALL_CLEF : 0);
+        const right = (FLAGS[item.note.type] && !item.beam ? GRACE.flag : 0) + (rightHead ? GRACE.head : 0);
+        item.parts = { left, head: GRACE.head, right };
+        item.min = left + GRACE.head + right + GRACE.gap;
+        continue;
+      }
       const doubles = item.heads.some((h) => h.accidental !== null && Math.abs(h.accidental) === 2);
       const leftHead = item.heads.some((h) => h.offset === -1);
       const rightHead = item.heads.some((h) => h.offset === 1);
@@ -239,7 +285,7 @@
       item.min = left + head + right + MIN.gap;
     }
     const min = MEASURE_PAD_LEFT + MEASURE_PAD_RIGHT + notes.reduce((sum, n) => sum + n.min, 0);
-    return { ...measure, index, changes, notes, beams, tuplets: tupletGroups(measure.notes), min, prevKey: prev?.key };
+    return { ...measure, index, changes, notes, beams, graceBeams, tuplets: tupletGroups(measure.notes), min, prevKey: prev?.key };
   }
 
   // Width of what goes before a measure's notes: a mid-row clef, key and time change.
@@ -428,10 +474,58 @@
     }
   }
 
+  // A grace note: small heads on their staff positions, a short stem up, small flags (a slash across the stem and
+  // flag for an acciaccatura), small accidentals.
+  function drawGrace(group, item, x, yOf) {
+    const { note } = item;
+    group.classList.add('is-grace');
+    group.dataset.grace = note.slash ? 'slash' : '';
+    const rx = HEAD_RX * GRACE_SCALE;
+    const headW = 2 * rx - 0.5;
+    drawLedgers(group, x, item.top, yOf, 7);
+    if (item.bottom !== item.top) drawLedgers(group, x, item.bottom, yOf, 7);
+    const heads = item.heads.map((head) => {
+      const hx = x + head.offset * headW;
+      const hy = yOf(head.pos);
+      const midi = N.midi(head.pitch);
+      if (head.accidental !== null) {
+        group.append(svgEl('text', {
+          x: x - rx - 1.5 - head.column * GRACE.accidental, y: hy + 3.5, class: 'sv-accidental is-grace', 'data-accidental': head.accidental, 'data-pos': head.pos,
+        }, SIGNS[head.accidental]));
+      }
+      group.append(svgEl('ellipse', {
+        cx: hx, cy: hy, rx, ry: 4.6 * GRACE_SCALE, transform: `rotate(-20 ${hx} ${hy})`,
+        class: `${OPEN[note.type] ? 'sv-open' : 'sv-fill'} sv-head`, 'data-pos': head.pos, 'data-midi': midi,
+      }));
+      return { x: hx, y: hy, pos: head.pos, midi, tie: undefined };
+    });
+    const y = yOf(item.pos);
+    const stemX = x + STEM_DX * GRACE_SCALE;
+    const end = yOf(item.stemEnd);
+    if (note.type !== 'whole') {
+      group.append(svgEl('line', { x1: stemX, x2: stemX, y1: yOf(item.bottom) - 1, y2: end, class: 'sv-stem is-grace' }));
+      if (FLAGS[note.type] && !item.beam) {
+        const flags = svgEl('g', { transform: `translate(${stemX} ${end}) scale(${GRACE_SCALE}) translate(${-stemX} ${-end})` });
+        group.append(flags);
+        drawFlags(flags, stemX, end, 1, FLAGS[note.type]);
+      }
+      // A slash crosses the stem of a lone grace note, or the first stem of a beamed group.
+      if (note.slash && (!item.beam || item.beamFirst)) {
+        group.append(svgEl('line', { x1: stemX - 5, y1: end + 13, x2: stemX + 7, y2: end + 4, class: 'sv-stem sv-grace-slash' }));
+      }
+    }
+    return { x, y, stem: 1, stemX, end, heads, grace: true };
+  }
+
   function drawNote(parent, item, x, yOf) {
     const { note, pos, stem, accidental } = item;
     const group = svgEl('g', { class: 'sv-note', 'data-type': note.type });
     parent.append(group);
+    if (item.grace) {
+      group.dataset.pos = pos;
+      group.dataset.midi = N.midi(note.pitch);
+      return drawGrace(group, item, x, yOf);
+    }
     if (note.rest) {
       group.dataset.rest = '';
       drawRest(group, note, x, yOf);
@@ -490,15 +584,17 @@
   // Beams: one across the group, then for 16ths and 32nds a further beam between neighbours that both have it,
   // or a short stub on a lone one (pointing to the neighbour it belongs with).
   function drawBeams(parent, info, drawn) {
-    for (const beam of info.beams) {
-      const group = svgEl('g', { class: 'sv-beam-group', 'data-levels': beam.levels, 'data-size': beam.members.length });
+    for (const beam of [...info.beams, ...info.graceBeams]) {
+      const thick = beam.grace ? BEAM * GRACE_SCALE : BEAM;
+      const gap = beam.grace ? BEAM_GAP * GRACE_SCALE : BEAM_GAP;
+      const group = svgEl('g', { class: `sv-beam-group${beam.grace ? ' is-grace' : ''}`, 'data-levels': beam.levels, 'data-size': beam.members.length });
       parent.append(group);
       const stems = beam.members.map((i) => drawn[i]);
       const level = (i) => FLAGS[info.notes[i].note.type];
       for (let L = 1; L <= beam.levels; L++) {
-        const y = stems[0].end + beam.dir * (L - 1) * BEAM_GAP - (beam.dir === 1 ? 0 : BEAM);
+        const y = stems[0].end + beam.dir * (L - 1) * gap - (beam.dir === 1 ? 0 : thick);
         const rect = (x1, x2) => group.append(svgEl('rect', {
-          x: Math.min(x1, x2) - 0.7, y, width: Math.abs(x2 - x1) + 1.4, height: BEAM, class: 'sv-fill sv-beam', 'data-level': L,
+          x: Math.min(x1, x2) - 0.7, y, width: Math.abs(x2 - x1) + 1.4, height: thick, class: 'sv-fill sv-beam', 'data-level': L,
         }));
         if (L === 1) {
           rect(stems[0].stemX, stems[stems.length - 1].stemX);
@@ -512,7 +608,7 @@
           else if ((prev === undefined || level(prev) < L) && (next === undefined || level(next) < L)) {
             // A lone short note: a stub towards the following note, or back towards the previous one at the end.
             const toward = next !== undefined ? 1 : -1;
-            rect(stems[k].stemX, stems[k].stemX + toward * 8);
+            rect(stems[k].stemX, stems[k].stemX + toward * (beam.grace ? 5 : 8));
           }
         });
       }

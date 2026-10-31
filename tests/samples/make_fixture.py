@@ -76,14 +76,15 @@ def analyse(root):
                     key = head_key if chord else (int(el.findtext('staff') or 1), el.findtext('voice') or '1')
                     if not chord:
                         head_key = key
-                    if key in events and not grace:
+                    if key in events:
                         pitch = el.find('pitch')
                         midi = None
                         if pitch is not None:
                             midi = 12 * (int(pitch.findtext('octave')) + 1) + SEMI[pitch.findtext('step')] \
                                 + int(float(pitch.findtext('alter') or 0)) + chromatic
                         ties = [t.get('type') for t in el.findall('tie')] or [t.get('type') for t in el.findall('notations/tied')]
-                        events[key].append([midi, offset + start, dur, 'start' in ties, 'stop' in ties])
+                        # A grace note sounds with no time of its own; its tie is a written detail.
+                        events[key].append([midi, offset + start, dur, 'start' in ties and not grace, 'stop' in ties and not grace])
                 elif el.tag == 'backup':
                     cursor = max(Fraction(0), cursor - Fraction(int(el.findtext('duration')), 4 * divisions))
                 elif el.tag == 'forward':

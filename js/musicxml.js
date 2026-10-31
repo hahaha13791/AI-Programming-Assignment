@@ -359,6 +359,23 @@
     };
   }
 
+  // A grace note (and its chord): its written type (an eighth if the file gives none), a slash if it has one. It takes
+  // no time; a tie from it to the note it leads to is a written detail, not kept.
+  function graceOf(element, mark, type, dots, interval, chordElements) {
+    if (hasChild(element, 'rest')) throw never('쉼표 꾸밈음');
+    const written = type || 'eighth';
+    if (OTHER_TYPES[written]) throw never(OTHER_TYPES[written]);
+    if (!NOTE_TYPES.includes(written) || dots > 2) throw never(`음표 길이 ${written}`);
+    const note = { type: written, dots, grace: true, pitch: pitchOf(element, interval).pitch };
+    if (mark.getAttribute('slash') === 'yes') note.slash = true;
+    if (chordElements.length) {
+      note.chord = chordElements.map((member) => ({ pitch: pitchOf(member, interval).pitch }));
+      const midis = [note, ...note.chord].map((p) => N.midi(p.pitch));
+      if (new Set(midis).size !== midis.length) throw never('같은 음이 겹친 화음');
+    }
+    return note;
+  }
+
   // One MusicXML note of the chosen line (and the notes of its chord) → a v2 note, with its file tie and tuplet
   // marks kept for the passes after.
   function noteOf(element, length, interval, chordElements = []) {
@@ -366,6 +383,8 @@
     if (hasChild(element, 'unpitched')) throw never('음높이 없는 음');
     let type = childText(element, 'type');
     let dots = childrenOf(element, 'dot').length;
+    const graceMark = childOf(element, 'grace');
+    if (graceMark) return graceOf(element, graceMark, type, dots, interval, chordElements);
     const modification = childOf(element, 'time-modification');
     const actual = modification ? Number(childText(modification, 'actual-notes')) : 0;
     const normal = modification ? Number(childText(modification, 'normal-notes')) : 0;
@@ -420,7 +439,9 @@
   // Tuplet groups in a measure. A note's time-modification is the whole ratio it is played at; the file's brackets say
   // where groups start and stop and how deep they nest (two levels at most). Without brackets, runs of notes with the
   // same ratio are grouped, each closed when it adds up to `actual` notes of its first note's kind.
-  function markTuplets(notes) {
+  function markTuplets(all) {
+    // Grace notes take no time and belong to no tuplet: groups are made of the other notes.
+    const notes = all.filter((note) => !note.grace);
     if (notes.some((note) => note.bracketStarts?.length)) {
       markNestedTuplets(notes);
       return;
@@ -572,7 +593,6 @@
           const voice = childText(item.element, 'voice') || '1';
           inLine = staff === line.staff && voice === line.voice;
           if (!inLine) continue;
-          if (item.grace) throw later('꾸밈음');
           events.push({ ...item, chordElements: [] });
           continue;
         }

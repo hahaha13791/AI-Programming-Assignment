@@ -17,7 +17,9 @@
   //             of normal), tupletStart / tupletStop: true on a tuplet group's first / last note,
   //             tuplet2 / tuplet2Start / tuplet2Stop: a tuplet inside that tuplet (the lengths multiply),
   //             clef / tempo (optional): a change inside the measure, from this note on,
-  //             chord (optional): the other pitches sounding with it, [{ pitch, tie }] — each with its own tie }
+  //             chord (optional): the other pitches sounding with it, [{ pitch, tie }] — each with its own tie,
+  //             grace: true (optional): a grace note, drawn small and taking no time in the measure (its type is how it
+  //             is written); slash: true on a grace note with a slash (acciaccatura). No rest, tie or tuplet. }
   // Lengths are fractions of a whole note, [numerator, denominator], so tuplets and dots add up exactly.
 
   const TYPES = { whole: 1, half: 2, quarter: 4, eighth: 8, '16th': 16, '32nd': 32, '64th': 64 };
@@ -48,6 +50,7 @@
 
   // ---- notes ----
   function duration(note) {
+    if (note.grace) return ZERO; // a grace note takes no time in the measure
     let length = frac(1, TYPES[note.type]);
     if (note.dots) length = mul(length, frac(2 ** (note.dots + 1) - 1, 2 ** note.dots));
     if (note.tuplet) length = mul(length, frac(note.tuplet.normal, note.tuplet.actual));
@@ -147,6 +150,11 @@
     } else if (note.tuplet2Start || note.tuplet2Stop) {
       return false;
     }
+    if (note.grace !== undefined) {
+      if (note.grace !== true || note.rest || note.tie !== undefined || note.tuplet !== undefined) return false;
+      if ((note.chord ?? []).some((c) => c.tie !== undefined)) return false;
+    }
+    if (note.slash !== undefined && !(note.slash === true && note.grace)) return false;
     if (note.clef !== undefined && !CLEFS.includes(note.clef)) return false;
     if (note.tempo !== undefined && !validTempo(note.tempo)) return false;
     return true;
@@ -177,6 +185,7 @@
     const level = (name) => {
       let open = null;
       for (const note of notes) {
+        if (note.grace) continue; // a grace note inside a tuplet group belongs to neither
         const ratio = note[name];
         if (ratio) {
           if (note[`${name}Start`]) {
@@ -253,6 +262,8 @@
       if (n.tuplet2Stop) out.tuplet2Stop = true;
       if (n.clef) out.clef = n.clef;
       if (n.tempo !== undefined) out.tempo = n.tempo;
+      if (n.grace) out.grace = true;
+      if (n.slash) out.slash = true;
       if (n.chord) {
         out.chord = n.chord.map((c) => {
           const member = { pitch: { step: c.pitch.step, alter: c.pitch.alter, octave: c.pitch.octave } };
@@ -355,6 +366,7 @@
         if (note.tie) return '붙임줄';
         if (note.tuplet) return '잇단음표';
         if (note.chord) return '화음';
+        if (note.grace) return '꾸밈음';
         if (note.tempo !== undefined) return '마디 중간 빠르기 바뀜';
         if (!legacyType(note)) return '음표 길이';
         if (!note.rest) {
@@ -399,6 +411,14 @@
   const LENGTHS = { w: 'whole', h: 'half', q: 'quarter', 8: 'eighth', 16: '16th', 32: '32nd', 64: '64th' };
 
   function parseNote(token) {
+    // A grace note: g before it ("gD5:8"), gs for one with a slash.
+    const grace = token.match(/^(gs?)(.*)$/);
+    if (grace && /^[A-G]/.test(grace[2])) {
+      const note = parseNote(grace[2]);
+      note.grace = true;
+      if (grace[1] === 'gs') note.slash = true;
+      return note;
+    }
     const match = token.match(/^(r|([A-G])(##|#|bb|b)?(\d)):(w|h|q|8|16|32|64)(\.{0,2})(~?)$/);
     if (!match) throw new Error(`Bad note: ${token}`);
     const [, , step, accidental, octave, length, dots, tie] = match;
@@ -429,6 +449,7 @@
         const note = parseNote(token);
         if (previous && (previous.tie === 'start' || previous.tie === 'both')) note.tie = note.tie ? 'both' : 'stop';
         open.forEach((tuplet, level) => {
+          if (note.grace) return; // a grace note inside a tuplet belongs to no group
           const name = level ? 'tuplet2' : 'tuplet';
           note[name] = { actual: tuplet.actual, normal: tuplet.normal };
           if (tuplet.first) note[`${name}Start`] = true;
