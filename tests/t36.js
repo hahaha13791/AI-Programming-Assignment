@@ -218,7 +218,8 @@ T.test('36-4 저장할 수 없는 환경', async (T) => {
   try {
     await importThroughBox(SIMPLE, 'simple.musicxml');
     T.check(T.$('score-notice').textContent.includes('저장하지 못했어요'), `저장 실패 안내 (${T.$('score-notice').textContent})`);
-    T.check(scores.get(scoreId)?.title === '편집기 범위' && section && section.answer.length === 6, '이번 방문 동안은 연습할 수 있음');
+    // (The same file was brought in earlier in this run, so from 개선-10 this one is "편집기 범위 (1)".)
+    T.check(scores.get(scoreId)?.title.startsWith('편집기 범위') && section && section.answer.length === 6, `이번 방문 동안은 연습할 수 있음 (${scores.get(scoreId)?.title})`);
   } finally {
     Storage.prototype.setItem = original;
   }

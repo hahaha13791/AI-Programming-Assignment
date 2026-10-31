@@ -157,14 +157,24 @@ const DELETE_LABEL = '삭제';
 const DELETE_CONFIRM = '한 번 더 누르면 삭제';
 const DELETE_WAIT = 3000;
 
+// Titles compare without the spaces around and between words or the case of letters (PRD #4-H-1).
+const titleKey = (text) => text.trim().replace(/\s+/g, ' ').toLowerCase();
+const titleTaken = (title, exceptId = null) => scores.list().some((score) => score.id !== exceptId && titleKey(score.title) === titleKey(title));
+
+// A title no other score has: as it is, or with the smallest free " (n)" after it (an import, PRD #4-G-3).
+function freeTitle(title) {
+  if (!titleTaken(title)) return title;
+  for (let n = 1; ; n++) {
+    const suffix = ` (${n})`;
+    const candidate = title.trim().slice(0, Notation.MAX_TITLE - suffix.length) + suffix;
+    if (!titleTaken(candidate)) return candidate;
+  }
+}
+
 const scoreEditor = ScoreEditor.create({
   title: $('editor-title'),
   titleNote: $('editor-title-note'),
-  // Titles compare without the spaces around and between words or the case of letters.
-  titleTaken: (title) => {
-    const key = (text) => text.trim().replace(/\s+/g, ' ').toLowerCase();
-    return scores.list().some((score) => score.id !== editingId && key(score.title) === key(title));
-  },
+  titleTaken: (title) => titleTaken(title, editingId),
   view: $('editor-view'),
   status: $('editor-status'),
   undo: $('editor-undo'),
@@ -296,7 +306,9 @@ function importChosen() {
     $('import-status').classList.add('is-error');
     return null;
   }
-  const saved = scores.save({ ...result.score, id: undefined });
+  const title = freeTitle(result.score.title);
+  if (title !== result.score.title) result.notices.push(`같은 제목이 있어 '${title}'로 저장했어요`);
+  const saved = scores.save({ ...result.score, title, id: undefined });
   if (!saved) {
     $('import-status').textContent = '악보를 옮기지 못했어요.';
     $('import-status').classList.add('is-error');

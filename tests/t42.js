@@ -213,3 +213,51 @@ T.test('개선-9 같은 제목으로는 저장하지 않음', async (T) => {
   T.$('score-select').dispatchEvent(new Event('change'));
   T.setMode('melody');
 });
+
+// 개선-10·11: an import whose title another score has gets " (n)".
+T.test('개선-11 불러오기는 같은 제목에 번호를 붙임', async (T) => {
+  T.setMode('score');
+  const ticker = setInterval(() => {}, 10); // file reads run off the page's thread (pitfalls.md)
+  const xml = (title) => '<?xml version="1.0" encoding="UTF-8"?>\n<score-partwise version="4.0">'
+    + `<work><work-title>${title}</work-title></work><part-list><score-part id="P1"><part-name>Flute</part-name></score-part></part-list><part id="P1">`
+    + '<measure number="1"><attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>'
+    + '<note><pitch><step>C</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>whole</type></note></measure></part></score-partwise>';
+  const bring = async (title) => {
+    T.$('btn-new-score').click();
+    await importFile(new File([xml(title)], 'x.musicxml'));
+    T.$('btn-import').click();
+    return scores.get(scoreId).title;
+  };
+  const made = [];
+  const first = await bring('불러온 노래');
+  made.push(scoreId);
+  const second = await bring('불러온 노래');
+  made.push(scoreId);
+  T.check(T.$('score-notice').textContent.includes("'불러온 노래 (1)'로 저장"), `알림에 바뀐 제목 (${T.$('score-notice').textContent})`);
+  const third = await bring('불러온 노래');
+  made.push(scoreId);
+  T.check(first === '불러온 노래' && second === '불러온 노래 (1)' && third === '불러온 노래 (2)', `세 번 불러오면 제목, (1), (2) (${[first, second, third].join(' / ')})`);
+  const spaced = await bring('  반짝반짝   작은 별 ');
+  made.push(scoreId);
+  T.check(spaced === '반짝반짝   작은 별 (1)' || spaced === '반짝반짝 작은 별 (1)', `공백만 다른 제목도 겹침 (${spaced})`);
+  const fresh = await bring('아무도 안 쓴 제목');
+  made.push(scoreId);
+  T.check(fresh === '아무도 안 쓴 제목' && !T.$('score-notice').textContent.includes('같은 제목'), '겹치지 않으면 그대로');
+  const long = 'ㄱ'.repeat(Notation.MAX_TITLE);
+  await bring(long);
+  made.push(scoreId);
+  const longer = await bring(long);
+  made.push(scoreId);
+  T.check(longer.length === Notation.MAX_TITLE && longer.endsWith(' (1)'), `100자 제목에 번호를 붙여도 100자 (${longer.length}자)`);
+  for (const id of made) {
+    T.$('score-select').value = id;
+    T.$('score-select').dispatchEvent(new Event('change'));
+    T.deleteScore();
+  }
+  localStorage.removeItem(Scores.STORAGE_KEY);
+  localStorage.removeItem(Settings.SECTIONS_KEY);
+  T.$('score-select').value = scores.list()[0].id;
+  T.$('score-select').dispatchEvent(new Event('change'));
+  clearInterval(ticker);
+  T.setMode('melody');
+});
