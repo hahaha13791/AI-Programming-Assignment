@@ -842,6 +842,99 @@
       });
     }
 
+    // ---- [기호] tools (PRD #4-H-3), on the cursor's measure ----
+
+    // A repeat barline at the measure's start or end, on or off. A repeat end takes the place of a double or final
+    // barline there.
+    function toggleRepeat(side) {
+      return change((draft, c) => {
+        const m = draft.measures[c.measure];
+        const name = side === 'start' ? 'repeatStart' : 'repeatEnd';
+        if (m[name]) delete m[name];
+        else {
+          m[name] = true;
+          if (side === 'end') delete m.barline;
+        }
+        return sound(draft);
+      });
+    }
+
+    // The barline at the measure's end: 'double', 'final' or null (plain). Not with a repeat end there.
+    function setBarline(kind) {
+      return change((draft, c) => {
+        const m = draft.measures[c.measure];
+        if (kind && m.repeatEnd) return false;
+        if ((m.barline ?? null) === (kind ?? null)) return false;
+        if (kind) m.barline = kind;
+        else delete m.barline;
+        return sound(draft);
+      });
+    }
+
+    // The measures of the ending bracket that measure `index` is under: [first, last], or null.
+    function bracketAt(measures, index) {
+      if (!measures[index].ending) return null;
+      let first = index;
+      while (!measures[first].ending.start && first > 0 && measures[first - 1].ending) first--;
+      let last = index;
+      while (!measures[last].ending.end && last + 1 < measures.length && measures[last + 1].ending) last++;
+      return [first, last];
+    }
+
+    // An ending bracket over `count` measures from the cursor's, with its text ("1.", "2." …) and a closing hook or
+    // not. Brackets it runs into are taken off first.
+    function setEnding(count, text, closed = true) {
+      const label = String(text ?? '').trim().slice(0, N.MAX_MARK);
+      return change((draft, c) => {
+        if (!label || !(count >= 1)) return false;
+        const from = c.measure;
+        const to = Math.min(draft.measures.length - 1, from + count - 1);
+        for (let i = from; i <= to; i++) {
+          const old = bracketAt(draft.measures, i);
+          if (old) for (let k = old[0]; k <= old[1]; k++) delete draft.measures[k].ending;
+        }
+        for (let i = from; i <= to; i++) {
+          const ending = { text: label };
+          if (i === from) ending.start = true;
+          if (i === to) ending.end = closed ? 'stop' : 'open';
+          draft.measures[i].ending = ending;
+        }
+        return sound(draft);
+      });
+    }
+
+    // Takes off the ending bracket over the cursor's measure.
+    function removeEnding() {
+      return change((draft, c) => {
+        const old = bracketAt(draft.measures, c.measure);
+        if (!old) return false;
+        for (let k = old[0]; k <= old[1]; k++) delete draft.measures[k].ending;
+        return true;
+      });
+    }
+
+    // A segno, a coda or words (D.C., D.S. al Coda, Fine …) at the measure's start or end.
+    function addMark(kind, text, at) {
+      const words = kind === 'text' ? String(text ?? '').trim().slice(0, N.MAX_MARK) : '';
+      return change((draft, c) => {
+        if (kind === 'text' && !words) return false;
+        const m = draft.measures[c.measure];
+        const mark = kind === 'text' ? { kind, text: words, at } : { kind, at };
+        if ((m.marks ?? []).some((x) => x.kind === mark.kind && x.text === mark.text && x.at === mark.at)) return false;
+        m.marks = [...(m.marks ?? []), mark];
+        return sound(draft);
+      });
+    }
+
+    function clearMarks() {
+      return change((draft, c) => {
+        const m = draft.measures[c.measure];
+        if (!m.marks) return false;
+        delete m.marks;
+        return true;
+      });
+    }
+
     // The score as it would be stored (its id is the app's business: the old one, or none for a new score).
     function result() {
       return N.clean({ ...trimmed(copy(doc)), id: id ?? 'new', title: title.trim() });
@@ -867,6 +960,7 @@
       fits, insert, setLength, erase, semitone, octave, toggleTie, isTied, tuplet, untuplet,
       setTime, setKey, setClef, setTempo, setPickup, setMeasureLength, insertMeasure, deleteMeasure, setFirstNumber,
       toggleChordPitch, addGrace, toggleSlash,
+      toggleRepeat, setBarline, setEnding, removeEnding, addMark, clearMarks,
       alterAt: (measure, at, step, oct) => alterAt(doc, measure, at, step, oct),
       clefAt: (measure = cursor.measure, at = cursor.note) => clefAt(doc, measure, at),
     };

@@ -308,6 +308,62 @@
       firstField.value = String(all[0].number);
     }
 
+    // ---- the [기호] panel ----
+    const repeatStart = button('|: 시작', { id: 'editor-repeat-start', 'aria-pressed': 'false', 'aria-label': '도돌이표 시작' });
+    const repeatEnd = button(':| 끝', { id: 'editor-repeat-end', 'aria-pressed': 'false', 'aria-label': '도돌이표 끝' });
+    const barlineField = select('editor-barline', [['', '보통'], ['double', '겹세로줄'], ['final', '끝세로줄']], '마디 끝 세로줄');
+    const barlineButton = button('바꾸기', { id: 'editor-barline-apply' });
+    const endingText = document.createElement('input');
+    Object.assign(endingText, { type: 'text', id: 'editor-ending-text', value: '1.', maxLength: N.MAX_MARK });
+    endingText.className = 'ed-number ed-text';
+    endingText.setAttribute('aria-label', '괄호 번호');
+    const endingCount = select('editor-ending-count', [1, 2, 3, 4].map((n) => [n, `${n}마디`]), '괄호 길이');
+    const endingClosed = document.createElement('input');
+    Object.assign(endingClosed, { type: 'checkbox', id: 'editor-ending-closed', checked: true });
+    const closedLabel = document.createElement('label');
+    closedLabel.className = 'ed-check';
+    closedLabel.append(endingClosed, ' 닫힘');
+    const endingButton = button('넣기', { id: 'editor-ending-apply' });
+    const endingRemove = button('빼기', { id: 'editor-ending-remove' });
+    const segnoButton = button('세뇨 𝄋', { id: 'editor-segno' });
+    const codaButton = button('코다 𝄌', { id: 'editor-coda' });
+    const wordsField = select('editor-words', ['D.C.', 'D.C. al Fine', 'D.C. al Coda', 'D.S.', 'D.S. al Fine', 'D.S. al Coda', 'Fine', 'To Coda', 'Coda'].map((w) => [w, w]), '글자 기호');
+    const wordsCustom = document.createElement('input');
+    Object.assign(wordsCustom, { type: 'text', id: 'editor-words-custom', maxLength: N.MAX_MARK, placeholder: '직접 쓰기' });
+    wordsCustom.className = 'ed-number ed-text';
+    wordsCustom.setAttribute('aria-label', '글자 기호 직접 쓰기');
+    const wordsAt = select('editor-words-at', [['end', '마디 끝'], ['start', '첫머리']], '글자 자리');
+    const wordsButton = button('넣기', { id: 'editor-words-apply' });
+    const marksClear = button('이 마디 기호 지우기', { id: 'editor-marks-clear' });
+    tools.signs.append(
+      field('도돌이표', repeatStart, repeatEnd),
+      field('마디 끝', barlineField, barlineButton),
+      field('1·2번 괄호', endingText, endingCount, closedLabel, endingButton, endingRemove),
+      field('표지', segnoButton, codaButton),
+      field('글자', wordsField, wordsCustom, wordsAt, wordsButton),
+      field('', marksClear),
+    );
+    repeatStart.addEventListener('click', () => measureTool(() => state.toggleRepeat('start'), '도돌이표를 바꿀 수 없어요.'));
+    repeatEnd.addEventListener('click', () => measureTool(() => state.toggleRepeat('end'), '도돌이표를 바꿀 수 없어요.'));
+    barlineButton.addEventListener('click', () => measureTool(() => state.setBarline(barlineField.value || null), '도돌이표 끝이 있는 마디는 세로줄을 따로 정하지 않아요.'));
+    endingButton.addEventListener('click', () => measureTool(() => state.setEnding(Number(endingCount.value), endingText.value, endingClosed.checked), '괄호 번호를 적어 주세요.'));
+    endingRemove.addEventListener('click', () => measureTool(() => state.removeEnding(), '이 마디에는 괄호가 없어요.'));
+    segnoButton.addEventListener('click', () => measureTool(() => state.addMark('segno', null, 'start'), '이미 있어요.'));
+    codaButton.addEventListener('click', () => measureTool(() => state.addMark('coda', null, 'start'), '이미 있어요.'));
+    wordsButton.addEventListener('click', () => measureTool(() => state.addMark('text', wordsCustom.value.trim() || wordsField.value, wordsAt.value), '이미 있어요.'));
+    marksClear.addEventListener('click', () => measureTool(() => state.clearMarks(), '이 마디에는 기호가 없어요.'));
+
+    function renderSignTools() {
+      const m = state.score.measures[state.cursor.measure];
+      repeatStart.setAttribute('aria-pressed', String(Boolean(m.repeatStart)));
+      repeatEnd.setAttribute('aria-pressed', String(Boolean(m.repeatEnd)));
+      barlineField.value = m.barline ?? '';
+      barlineField.disabled = Boolean(m.repeatEnd);
+      barlineButton.disabled = Boolean(m.repeatEnd);
+      endingRemove.disabled = !m.ending;
+      marksClear.disabled = !m.marks;
+    }
+
     function chooseLength(type) {
       input.type = type;
       input.dots = 0;
@@ -409,6 +465,7 @@
       slashButton.setAttribute('aria-pressed', String(Boolean(target.slash)));
       slashButton.disabled = !target.grace;
       renderMeasureTools();
+      renderSignTools();
       const fitsNow = state.fits(input.type, input.dots);
       restButton.disabled = !fitsNow;
       pad.classList.toggle('is-disabled', !fitsNow && input.mode === 'note'); // a chord or grace note takes no room

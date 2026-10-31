@@ -1325,6 +1325,10 @@ button:focus-visible {
   width: 4.2rem;
 }
 
+.ed-number.ed-text {
+  width: 6rem;
+}
+
 .ed-check {
   display: inline-flex;
   align-items: center;
