@@ -202,14 +202,16 @@ T.test('27-6 편집기: 만들기·다시 열기·편집·삭제', async (T) => 
   T.$('editor-title').value = '새 시험 악보';
   T.$('editor-title').dispatchEvent(new Event('input'));
   T.check(T.$('editor-save').disabled, '쉼표뿐인 새 악보는 저장할 수 없음');
-  // (음 넣기 화면은 43단계: 그때까지 편집 동작으로 3/4 한 마디를 넣는다.)
+  // (박자 바꾸기 도구는 45단계: 그때까지 편집 동작으로 3/4로 바꾼다.)
   scoreEditor.apply((s) => {
-    s.measures[0] = { ...s.measures[0], time: [3, 4], notes: [
-      { type: 'quarter', dots: 0, pitch: { step: 'F', alter: 1, octave: 4 } },
-      { type: 'quarter', dots: 0, pitch: { step: 'G', alter: 0, octave: 4 } },
-      { type: 'quarter', dots: 0, rest: true },
-    ] };
+    s.measures[0] = { ...s.measures[0], time: [3, 4], notes: [{ type: 'half', dots: 1, rest: true }] };
   });
+  document.querySelector('#editor-tool-notes [data-type="quarter"]').click();
+  T.$('editor-sharp').click();
+  T.editorPad(1);
+  T.$('editor-sharp').click();
+  T.editorPad(2);
+  T.$('editor-rest').click();
   T.check(!T.$('editor-save').disabled, '3/4 한 마디(파# 솔 쉼표)를 채우면 저장 활성');
   T.$('editor-save').click();
   const saved = scores.list().find((s) => s.title === '새 시험 악보');

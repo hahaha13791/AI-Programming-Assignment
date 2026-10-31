@@ -69,6 +69,11 @@
       else staff.setLocked(false);
     },
 
+    // Presses a line or space of the editor's input staff (position 0 = the bottom line).
+    editorPad(pos) {
+      $('editor-pad').querySelector(`.ed-slot[data-pos="${pos}"]`).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    },
+
     // Deletes the chosen 내 악보 score: [편집] → the editor's [삭제] twice (expansion 7: every score opens in the editor).
     deleteScore() {
       $('btn-edit-score').click();

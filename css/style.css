@@ -1257,9 +1257,77 @@ button:focus-visible {
 }
 
 .editor-tools {
-  height: 13rem;
+  height: 24rem;
   overflow-y: auto;
   padding: var(--space-3) 0;
+}
+
+/* [음표] tools: rows of small buttons, then the input staff. */
+.ed-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+}
+
+.ed-button {
+  min-width: 2.4rem;
+  min-height: 2.4rem;
+  padding: 0 var(--space-2);
+  font-size: var(--fs-sm);
+}
+
+.ed-row .ed-button {
+  flex: 0 0 auto;
+}
+
+.ed-lengths .ed-button {
+  flex: 1 1 0;
+  max-width: 4rem;
+}
+
+.ed-button[aria-checked="true"],
+.ed-button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.ed-pad-svg {
+  display: block;
+  width: 100%;
+  max-width: 300px;
+  height: auto;
+  color: var(--text);
+}
+
+.ed-pad .staff-line {
+  stroke: var(--text);
+  stroke-width: 1.2;
+}
+
+.ed-pad-ledger {
+  stroke: var(--border);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.ed-slot {
+  fill: transparent;
+  cursor: pointer;
+}
+
+.ed-slot:hover {
+  fill: var(--accent-soft);
+}
+
+.ed-pad.is-disabled .ed-slot {
+  pointer-events: none;
+}
+
+.ed-pad.is-disabled {
+  opacity: 0.5;
 }
 
 .editor-actions {
