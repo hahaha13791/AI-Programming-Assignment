@@ -9,7 +9,38 @@
   const BASE = (document.currentScript?.src ?? '').replace(/sampler\.js(\?.*)?$/, 'data/instruments/');
 
   const decoded = new Map(); // name -> { context, status: 'loading'|'ready'|'failed', buffers: Map(sample -> AudioBuffer) }
+  const files = new Map(); // name -> 'fetching'|'loaded'|'failed' (the data script)
   let current = 'piano';
+
+  // Reads an instrument's data file (once) by adding a <script> (file:// can't fetch). Calls done(ok) when settled.
+  function load(name, done = () => {}) {
+    if (window.INSTRUMENTS?.[name]) {
+      files.set(name, 'loaded');
+      done(true);
+      return;
+    }
+    const known = files.get(name);
+    if (known === 'failed') {
+      done(false);
+      return;
+    }
+    const waiting = load.waiting ?? (load.waiting = new Map());
+    if (!waiting.has(name)) waiting.set(name, []);
+    waiting.get(name).push(done);
+    if (known === 'fetching') return;
+    files.set(name, 'fetching');
+    const script = document.createElement('script');
+    script.src = `${BASE}${name}.js`;
+    script.dataset.instrument = name;
+    const settle = (ok) => {
+      files.set(name, ok ? 'loaded' : 'failed');
+      for (const callback of waiting.get(name) ?? []) callback(ok);
+      waiting.delete(name);
+    };
+    script.addEventListener('load', () => settle(Boolean(window.INSTRUMENTS?.[name])));
+    script.addEventListener('error', () => settle(false));
+    document.head.append(script);
+  }
 
   function bytesOf(b64) {
     const text = atob(b64);
@@ -23,12 +54,10 @@
     const known = decoded.get(name);
     if (known && known.context === context) return known;
     const instrument = window.INSTRUMENTS?.[name];
+    // Its file isn't read yet (or couldn't be): nothing to decode, and nothing kept, so it can be tried again.
+    if (!instrument?.samples?.length) return { context, status: files.get(name) === 'failed' ? 'failed' : 'none', buffers: new Map() };
     const state = { context, status: 'loading', buffers: new Map() };
     decoded.set(name, state);
-    if (!instrument?.samples?.length) {
-      state.status = 'failed';
-      return state;
-    }
     let left = instrument.samples.length;
     for (const sample of instrument.samples) {
       let data;
@@ -50,7 +79,12 @@
     return state;
   }
 
-  const status = (name = current) => decoded.get(name)?.status ?? 'none';
+  // 'fetching' (the file), 'loading' (decoding), 'ready', 'failed' or 'none' (not asked for yet).
+  const status = (name = current) => {
+    if (files.get(name) === 'fetching') return 'fetching';
+    if (files.get(name) === 'failed') return 'failed';
+    return decoded.get(name)?.status ?? 'none';
+  };
   const ready = (name = current, context) => {
     const state = decoded.get(name);
     return Boolean(state && state.status === 'ready' && (!context || state.context === context));
@@ -100,7 +134,7 @@
   }
 
   window.Sampler = {
-    prepare, status, ready, pick, play, setCurrent, BASE, LOUDNESS, RELEASE,
+    load, prepare, status, ready, pick, play, setCurrent, BASE, LOUDNESS, RELEASE,
     get current() { return current; },
   };
 })();

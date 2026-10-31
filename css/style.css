@@ -495,6 +495,21 @@ button:focus-visible {
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
 }
 
+.settings-note {
+  min-height: 2.6em;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.3;
+}
+
+.settings-credit {
+  margin: var(--space-2) 0 0;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  line-height: 1.3;
+}
+
 .settings-title {
   margin: 0 0 var(--space-2);
   font-size: var(--fs-sm);

@@ -116,7 +116,7 @@ T.test('30-4 빠르기 설정', async (T) => {
   T.$('btn-settings').click();
   const box = T.$('settings');
   T.check(!box.hidden && T.$('btn-settings').getAttribute('aria-expanded') === 'true', '⚙을 누르면 설정 창');
-  T.check(document.activeElement?.name === 'speed' && document.activeElement.checked, '열면 고른 빠르기에 초점');
+  T.check(document.activeElement?.name === 'instrument' && document.activeElement.checked, '열면 첫 설정(확장 8부터 악기)의 고른 값에 초점');
   const rect = box.getBoundingClientRect();
   T.check(rect.left >= 0 && rect.right <= document.documentElement.clientWidth, `설정 창이 화면 안에 (${Math.round(rect.left)}~${Math.round(rect.right)})`);
   const slow = box.querySelector('input[value="0.5"]');
@@ -134,7 +134,7 @@ T.test('30-4 빠르기 설정', async (T) => {
   document.querySelector('h1').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
   T.check(box.hidden, '바깥을 누르면 닫힘');
   T.setMode('melody');
-  T.check(T.$('btn-settings').hidden, '다른 모드에서는 ⚙ 없음');
+  T.check(!T.$('btn-settings').hidden, '다른 모드에서도 ⚙ 보임 (확장 8부터 악기 고르기, 빠르기·계이름은 내 악보에서만)');
   T.setMode('score');
 });
 

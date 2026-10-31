@@ -1,9 +1,9 @@
 (function () {
-  // Settings kept in this browser (내 악보: playback speed and solfège style). Reading or writing can fail
+  // Settings kept in this browser (내 악보: playback speed and solfège style; every mode: the instrument, PRD #4-I). Reading or writing can fail
   // (privacy settings): the defaults are used then and nothing breaks.
   const STORAGE_KEY = 'ltw.settings.v1';
-  const DEFAULTS = { speed: 1, solfege: 'movable' };
-  const ALLOWED = { speed: [1, 0.75, 0.5], solfege: ['movable', 'fixed'] };
+  const DEFAULTS = { speed: 1, solfege: 'movable', instrument: 'piano' };
+  const ALLOWED = { speed: [1, 0.75, 0.5], solfege: ['movable', 'fixed'], instrument: ['piano', 'violin', 'flute', 'marimba', 'harp'] };
 
   function readAll() {
     try {

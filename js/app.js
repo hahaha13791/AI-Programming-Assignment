@@ -76,7 +76,7 @@ function setMode(next) {
   const score = mode === 'score';
   $('difficulty-title').textContent = score ? '악보' : '난이도';
   $('score-picker').hidden = !score;
-  $('btn-settings').hidden = !score;
+  $('btn-settings').hidden = false; // every mode: the instrument (PRD #4-I-1)
   closeSettings();
   closeNewScore();
   renderScoreNotice();
@@ -929,9 +929,70 @@ $('score-select').addEventListener('change', (event) => {
   newQuestion();
 });
 
-// ⚙ 설정 (내 악보): a small box under the button, not a browser dialog. Outside presses and Esc close it.
+// ⚙ 설정: a small box under the button, not a browser dialog. Outside presses and Esc close it. The instrument is
+// for every mode; speed, solfège and the chord line are 내 악보's.
+
+// What the instrument row says: its file or recordings on the way, couldn't be read, or how out-of-range notes sound.
+function instrumentStatusText(name = Settings.get('instrument')) {
+  const status = Sampler.status(name);
+  if (status === 'fetching' || status === 'loading') return '녹음을 불러오는 중이에요… 그동안은 합성음으로 들려줘요.';
+  if (status === 'failed') return '녹음을 불러오지 못했어요. 합성음으로 들려줘요.';
+  return '악기 음역 밖의 음은 녹음을 늘려서 내요.';
+}
+
+function renderInstrumentStatus() {
+  $('settings-instrument-status').textContent = instrumentStatusText();
+}
+
+// Reads and decodes an instrument, then calls done(ready) (waiting on decoding with short timers).
+function readyInstrument(name, done) {
+  setTimeout(renderInstrumentStatus); // its file is on the way now (unless it was read before)
+  Sampler.load(name, (ok) => {
+    renderInstrumentStatus();
+    if (!ok) {
+      done(false);
+      return;
+    }
+    Sampler.prepare(Sound.context(), name);
+    renderInstrumentStatus();
+    let tries = 0;
+    const check = () => {
+      const status = Sampler.status(name);
+      if (status === 'ready' || status === 'failed' || ++tries > 400) {
+        renderInstrumentStatus();
+        done(status === 'ready');
+        return;
+      }
+      setTimeout(check, 25);
+    };
+    check();
+  });
+}
+
+// A short scale up from middle C, to hear the instrument just chosen.
+function previewInstrument() {
+  const steps = [60, 62, 64, 65, 67, 69, 71, 72];
+  Sound.playEvents(steps.map((midi, i) => ({ start: i * 0.28, length: i === steps.length - 1 ? 0.8 : 0.3, midi, peak: Playback.NOTE_PEAK, sustain: true })));
+}
+
+function chooseInstrument(name) {
+  Settings.set('instrument', name);
+  Sampler.setCurrent(name);
+  readyInstrument(name, () => {
+    if (Settings.get('instrument') === name) previewInstrument(); // the synthesized tone if it couldn't be read
+  });
+  renderInstrumentStatus();
+}
+
 function openSettings() {
   closeNewScore();
+  const score = mode === 'score';
+  for (const input of document.querySelectorAll('#settings input[name="instrument"]')) {
+    input.checked = input.value === Settings.get('instrument');
+  }
+  renderInstrumentStatus();
+  $('settings-speed').hidden = !score;
+  $('settings-solfege').hidden = !score;
   for (const input of document.querySelectorAll('#settings input[name="speed"]')) {
     input.checked = Number(input.value) === Settings.get('speed');
   }
@@ -939,10 +1000,10 @@ function openSettings() {
     input.checked = input.value === Settings.get('solfege');
   }
   // Only a score with chords has a line to choose.
-  const score = chosenScore();
-  $('settings-line').hidden = !score || !Notation.hasChords(score);
+  const chosen = score ? chosenScore() : null;
+  $('settings-line').hidden = !chosen || !Notation.hasChords(chosen);
   for (const input of document.querySelectorAll('#settings input[name="line"]')) {
-    input.checked = input.value === chosenLine(score);
+    input.checked = input.value === chosenLine(chosen);
   }
   $('settings').hidden = false;
   $('btn-settings').setAttribute('aria-expanded', 'true');
@@ -961,6 +1022,7 @@ $('btn-settings').addEventListener('click', () => {
   else closeSettings();
 });
 $('settings').addEventListener('change', (event) => {
+  if (event.target.name === 'instrument') chooseInstrument(event.target.value);
   if (event.target.name === 'speed') Settings.set('speed', Number(event.target.value));
   if (event.target.name === 'solfege') {
     Settings.set('solfege', event.target.value);
@@ -989,5 +1051,9 @@ for (const tab of document.querySelectorAll('.mode-tab')) {
     if (tab.dataset.mode !== mode) setMode(tab.dataset.mode);
   });
 }
+
+// The instrument chosen last time: its recordings are read now (they decode with the first sound).
+Sampler.setCurrent(Settings.get('instrument'));
+Sampler.load(Settings.get('instrument'));
 
 newQuestion();
