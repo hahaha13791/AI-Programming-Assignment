@@ -201,6 +201,7 @@ T.test('27-6 편집기: 만들기·다시 열기·편집·삭제', async (T) => 
   T.setMode('score');
   const count = scores.list().length;
   T.$('btn-new-score').click();
+  T.$('btn-make-score').click(); // 35단계부터 [새 악보]는 작은 창 → 직접 만들기
   T.$('editor-title').value = '새 시험 악보';
   T.$('editor-title').dispatchEvent(new Event('input'));
   document.querySelector('#editor-times [data-beats="3"]').click();

@@ -78,6 +78,7 @@ function setMode(next) {
   $('score-picker').hidden = !score;
   $('btn-settings').hidden = !score;
   closeSettings();
+  closeNewScore();
   renderScoreNotice();
   if (score) renderScorePicker();
   else updateLevelDescriptions();
@@ -212,7 +213,105 @@ function resetDelete() {
   $('editor-delete').textContent = DELETE_LABEL;
 }
 
-$('btn-new-score').addEventListener('click', () => openEditor(null));
+// [새 악보]: a small box like ⚙'s — 직접 만들기 (the editor) or 파일 불러오기 (MusicXML, PRD #4-G). Outside presses
+// and Esc close it.
+let importState = null; // the file read last: { title, parts, skipped }, or null
+let importRun = 0; // the newest file read wins if two overlap
+
+function openNewScore() {
+  closeSettings();
+  $('import').hidden = true;
+  $('new-score').hidden = false;
+  $('btn-new-score').setAttribute('aria-expanded', 'true');
+  $('btn-make-score').focus();
+}
+
+function closeNewScore(returnFocus = false) {
+  if ($('new-score').hidden) return;
+  $('new-score').hidden = true;
+  $('btn-new-score').setAttribute('aria-expanded', 'false');
+  if (returnFocus) $('btn-new-score').focus();
+}
+
+function radio(name, value, text, checked) {
+  const label = document.createElement('label');
+  const input = document.createElement('input');
+  Object.assign(input, { type: 'radio', name, value, checked });
+  label.append(input, ` ${text}`);
+  return label;
+}
+
+function chosenImportPart() {
+  const input = document.querySelector('#import-parts input:checked');
+  return importState && input ? importState.parts[Number(input.value)] : null;
+}
+
+// The staves and voices of the chosen part, asked only when there is more than one (PRD #4-G-2).
+function renderImportLines() {
+  const part = chosenImportPart();
+  const box = $('import-lines');
+  box.querySelectorAll('label').forEach((label) => label.remove());
+  box.hidden = !part || part.lines.length < 2;
+  if (box.hidden) return;
+  part.lines.forEach((line, i) => box.append(radio('import-line', String(i), `${line.label} (음 ${line.count}개)`, i === 0)));
+}
+
+function renderImport(fileName, status, isError = false) {
+  $('import').hidden = false;
+  $('import-file-name').textContent = fileName;
+  $('import-status').textContent = status;
+  $('import-status').classList.toggle('is-error', isError);
+  const parts = $('import-parts');
+  parts.querySelectorAll('label').forEach((label) => label.remove());
+  parts.hidden = !importState;
+  if (importState) {
+    importState.parts.forEach((part, i) => parts.append(radio('import-part', String(i), part.name, i === 0)));
+  }
+  renderImportLines();
+  const skipped = importState?.skipped ?? [];
+  $('import-skipped').hidden = !skipped.length;
+  $('import-skipped').textContent = skipped.length ? `음높이가 없는 파트 ${skipped.length}개(${skipped.join(', ')})는 뺐어요.` : '';
+  // Until TODO 36 the parts can be looked at but not brought in yet.
+  $('import-pending').hidden = !importState;
+  $('btn-import').disabled = true;
+}
+
+// Reads a MusicXML file and lists its parts (PRD #4-G-1, #4-G-2). Nothing is stored. Returns the list or null.
+async function importFile(file) {
+  const run = ++importRun;
+  importState = null;
+  renderImport(file.name, '읽는 중이에요…');
+  let state = null;
+  let error = null;
+  try {
+    const { doc, fileName } = await MusicXML.read(file);
+    state = MusicXML.candidates(doc, fileName);
+  } catch (caught) {
+    error = caught instanceof MusicXML.ImportError ? caught.message : MusicXML.MESSAGES.notXml;
+  }
+  if (run !== importRun) return null;
+  importState = state;
+  if (state) renderImport(file.name, '연습할 선율을 골라 주세요.');
+  else renderImport(file.name, error, true);
+  return state;
+}
+
+$('btn-new-score').addEventListener('click', () => {
+  if ($('new-score').hidden) openNewScore();
+  else closeNewScore();
+});
+$('btn-make-score').addEventListener('click', () => {
+  closeNewScore();
+  openEditor(null);
+});
+$('btn-import-file').addEventListener('click', () => $('import-file').click());
+$('btn-import-other').addEventListener('click', () => $('import-file').click());
+$('import-file').addEventListener('change', (event) => {
+  const file = event.target.files[0];
+  event.target.value = '';
+  if (file) importFile(file);
+});
+$('import-parts').addEventListener('change', renderImportLines);
 // A score the editor can't take yet (TODO 27-5) can still be deleted: 편집 turns into 삭제, confirmed by a second press
 // like the editor's.
 // The picker row is narrow on phones, so its confirm label is short; the screen-reader name says the whole thing.
@@ -793,6 +892,7 @@ $('score-select').addEventListener('change', (event) => {
 
 // ⚙ 설정 (내 악보): a small box under the button, not a browser dialog. Outside presses and Esc close it.
 function openSettings() {
+  closeNewScore();
   for (const input of document.querySelectorAll('#settings input[name="speed"]')) {
     input.checked = Number(input.value) === Settings.get('speed');
   }
@@ -824,9 +924,13 @@ $('settings').addEventListener('change', (event) => {
 });
 document.addEventListener('pointerdown', (event) => {
   if (!event.target.closest('#settings, #btn-settings')) closeSettings();
+  if (!event.target.closest('#new-score, #btn-new-score')) closeNewScore();
 });
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') closeSettings(true);
+  if (event.key === 'Escape') {
+    closeSettings(true);
+    closeNewScore(true);
+  }
 });
 
 for (const tab of document.querySelectorAll('.mode-tab')) {

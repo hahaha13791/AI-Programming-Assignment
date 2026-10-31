@@ -522,6 +522,67 @@ button:focus-visible {
   cursor: pointer;
 }
 
+/* [새 악보] box: under the 악보 title row like ⚙'s, a little wider for part names. */
+.new-score {
+  width: min(300px, 100%);
+}
+
+.new-score-choices,
+.import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.import {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.import p {
+  margin: 0;
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
+.import-file {
+  font-weight: 600;
+}
+
+.import-status:empty {
+  display: none;
+}
+
+.import-status.is-error {
+  color: var(--missed);
+}
+
+.import-note {
+  color: var(--text-muted);
+}
+
+/* A score with many parts scrolls inside the box instead of growing past the screen. */
+.import-list {
+  max-height: 9.5rem;
+  overflow-y: auto;
+}
+
+.import-list label {
+  align-items: flex-start;
+  overflow-wrap: anywhere;
+}
+
+.import-list input {
+  margin-top: 5px;
+}
+
+.import-actions {
+  justify-content: flex-end;
+}
+
 .btn-small {
   flex: none;
   min-height: 0;

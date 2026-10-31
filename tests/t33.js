@@ -125,6 +125,7 @@ T.test('33-4 예시 악보와 편집기 악보 한 사이클', async (T) => {
   }
   // A score made in the editor.
   T.$('btn-new-score').click();
+  T.$('btn-make-score').click(); // 35단계부터 [새 악보]는 작은 창 → 직접 만들기
   T.$('editor-title').value = '편집기 악보';
   T.$('editor-title').dispatchEvent(new Event('input'));
   document.querySelector('#editor-lengths [data-type="h"]').click();

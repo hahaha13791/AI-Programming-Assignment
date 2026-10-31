@@ -15,6 +15,7 @@
 ## 재생과 시간
 - 재생이 끝나야 입력이 풀린다. 입력만 볼 때는 `T.unlock()`(= `staff.setLocked(false)`, `rhythm.setLocked(false)`)으로 기다림을 건너뛴다.
 - `Date.now()`로 시간을 재는 반복은 가상 시간에서 예상과 다르게 움직일 수 있다. `T.waitFor`처럼 횟수로 기다린다.
+- **파일 읽기·압축 풀기에서 "시간 초과"**: `Blob.arrayBuffer()`, `DecompressionStream` 같은 일은 페이지 밖 스레드에서 돈다. 그동안 대기 중인 타이머가 없으면 가상 시간이 러너의 결과 대기 시간(폭당 120초)까지 한 번에 건너뛰어 "결과가 오지 않음"이 된다. 테스트 파일 맨 위에서 `const ticker = setInterval(() => {}, 10)`을 돌리고 마지막 테스트 끝에서 `clearInterval(ticker)` 한다(tests/t35.js). 앱 버그가 아니다.
 - 소리 자체는 확인할 수 없다. `Sound.play`·`Sound.playEvents`가 받은 값(시각, 음높이)만 검사할 수 있다. 필요하면 테스트 안에서 함수를 감싸 인자를 기록한다.
 
 ## 상태
