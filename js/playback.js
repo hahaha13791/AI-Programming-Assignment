@@ -6,8 +6,13 @@
   const NOTE_SHARE = 0.9; // a note sounds for this share of its length
   const NOTE_PEAK = 0.3;
   const CHORD_PEAK = 0.5; // a chord's notes share this, so many at once don't distort (as in harmony mode)
-  // Grace notes sound just before the note they lead to (which keeps its beat), each this long (at speed 1).
+  // Grace notes run on into the note they lead to (legato), the way each kind is played:
+  // - with a slash (acciaccatura): just before the beat, each this long (at speed 1); the note keeps its beat.
+  // - without (appoggiatura): on the beat, each taking a sixteenth (at most half the note between them) from the
+  //   note, which starts that much later.
+  // Each sounds until a little into the next one.
   const GRACE_LENGTH = 0.09;
+  const GRACE_OVERLAP = 0.03;
   const TONIC_LENGTH = 0.7;
   // The tonic, then a pause as long as melody mode's: tonic 0.7s + gap 0.15s + a silent beat 0.7s + gap 0.15s.
   const LEAD_IN = 1.7;
@@ -46,25 +51,37 @@
     const events = tonic ? [{ start: 0, length: TONIC_LENGTH, midi: tonicOf(score, start, end, line).midi, peak: NOTE_PEAK, sustain: false }] : [];
     let time = tonic ? LEAD_IN : 0;
     let total = time;
-    // Grace notes waiting for the note they lead to: they are placed back from its start.
+    // Grace notes waiting for the note they lead to. Returns how much later that note starts (appoggiaturas).
     let graces = [];
-    const placeGraces = () => {
-      const step = GRACE_LENGTH / speed;
+    const placeGraces = (item) => {
+      if (!graces.length) return 0;
+      const onBeat = item && graces.some((grace) => !grace.slash);
+      let slot = GRACE_LENGTH / speed;
+      let first = time - graces.length * slot;
+      if (onBeat) {
+        const sixteenth = 60 / item.tempo / 4 / speed;
+        slot = Math.min(sixteenth, seconds(item.note, item.tempo, speed) / 2 / graces.length);
+        first = time;
+      }
       graces.forEach((grace, n) => {
-        const at = time - (graces.length - n) * step;
         for (const pitch of grace.pitches) {
-          events.push({ start: at, length: step * 0.95, midi: N.midi(pitch.pitch), peak: Math.min(NOTE_PEAK, CHORD_PEAK / grace.pitches.length), sustain: true });
+          events.push({
+            start: first + n * slot, length: slot + GRACE_OVERLAP, midi: N.midi(pitch.pitch),
+            peak: Math.min(NOTE_PEAK, CHORD_PEAK / grace.pitches.length), sustain: true, grace: true,
+          });
         }
       });
+      const count = graces.length;
       graces = [];
+      return onBeat ? slot * count : 0;
     };
     all.forEach((item, k) => {
       if (item.m < start || item.m > end) return;
       if (item.note.grace) {
-        graces.push({ pitches: N.pitchesOf(item.note) });
+        graces.push({ pitches: N.pitchesOf(item.note), slash: Boolean(item.note.slash) });
         return;
       }
-      placeGraces();
+      const delay = placeGraces(item);
       const length = seconds(item.note, item.tempo, speed);
       // Each pitch of a chord sounds on its own: a tied one goes on through the notes its tie reaches.
       const pitches = N.pitchesOf(item.note);
@@ -80,13 +97,13 @@
           sounding += seconds(all[j + 1].note, all[j + 1].tempo, speed);
           tie = next.tie;
         }
-        events.push({ start: time, length: sounding * NOTE_SHARE, midi, peak, sustain: true });
+        events.push({ start: time + delay, length: (sounding - delay) * NOTE_SHARE, midi, peak, sustain: true });
         total = Math.max(total, time + sounding);
       }
       time += length;
       total = Math.max(total, time);
     });
-    placeGraces(); // grace notes at the very end lead to nothing after them: they sound before the end
+    placeGraces(null); // grace notes at the very end lead to nothing after them: they sound before the end
     // Grace notes before the first note may start before 0: everything moves later by that much.
     const early = Math.min(0, ...events.map((e) => e.start));
     if (early < 0) {

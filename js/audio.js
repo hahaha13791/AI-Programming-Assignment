@@ -48,7 +48,13 @@
 
     gain.gain.setValueAtTime(0, start);
     gain.gain.linearRampToValueAtTime(peak, start + ATTACK);
-    if (sustain) {
+    if (sustain && length < SUSTAIN_DECAY + RELEASE) {
+      // A short held note (a grace note): it holds its peak, then fades over its last third, so it runs on into the
+      // note after it instead of dying away first.
+      const release = Math.min(RELEASE, length / 3);
+      gain.gain.setValueAtTime(peak, start + Math.max(ATTACK, length - release));
+      gain.gain.linearRampToValueAtTime(0, start + length);
+    } else if (sustain) {
       gain.gain.linearRampToValueAtTime(peak * SUSTAIN_LEVEL, start + SUSTAIN_DECAY);
       gain.gain.setValueAtTime(peak * SUSTAIN_LEVEL, start + length - RELEASE);
       gain.gain.linearRampToValueAtTime(0, start + length);

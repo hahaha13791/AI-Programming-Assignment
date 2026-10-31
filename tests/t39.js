@@ -48,20 +48,32 @@
     box.remove();
   });
 
-  T.test('39-2 꾸밈음 재생', async (T) => {
+  // 개선-4: each kind as it is played, running on into the note it leads to (♩= 60: a quarter is 1 s, a 16th 0.25 s).
+  T.test('39-2·개선-5 꾸밈음 재생', async (T) => {
     const s = build('C5:q gsD5:8 C5:q gE5:16 gD5:16 C5:h');
     const r = Playback.schedule(s, { start: 0, end: 0, tonic: false });
     const G = Playback.GRACE_LENGTH;
-    const at = (midi) => r.events.filter((e) => e.midi === midi).map((e) => +e.start.toFixed(3));
-    T.check(JSON.stringify(at(72)) === JSON.stringify([0, 1, 2]), `뒤 음(도)의 시작은 박 그대로 0·1·2초 (${at(72)})`);
-    T.check(at(74)[0] === +(1 - G).toFixed(3) && at(76)[0] === +(2 - 2 * G).toFixed(3) && at(74)[1] === +(2 - G).toFixed(3),
-      `꾸밈음은 뒤 음 바로 앞에서 짧게 (레 ${at(74)}, 미 ${at(76)})`);
-    T.check(r.events.filter((e) => e.midi !== 72).every((e) => e.length < G), '꾸밈음 길이는 짧음');
-    const first = Playback.schedule(build('gB4:8 C5:w'), { start: 0, end: 0, tonic: false });
-    T.check(first.events[0].midi === 71 && first.events[0].start === 0 && Math.abs(first.events[1].start - G) < 1e-9,
-      '첫 음 앞의 꾸밈음은 그만큼 앞에 두고 전체를 뒤로 밂');
-    const lead = Playback.schedule(build('gB4:8 C5:w'), { start: 0, end: 0, tonic: true });
-    T.check(Math.abs(lead.events.find((e) => e.midi === 72 && e.start > 0).start - Playback.LEAD_IN) < 1e-9, '기준음 뒤에서는 첫 음의 박이 그대로');
+    const near = (a, b) => Math.abs(a - b) < 1e-9;
+    const ev = (midi) => r.events.filter((e) => e.midi === midi);
+    const mains = ev(72);
+    T.check(near(mains[0].start, 0) && near(mains[1].start, 1), `사선 꾸밈음 뒤의 도는 박 그대로 (1초) (${mains.map((e) => e.start)})`);
+    const slash = ev(74)[0];
+    T.check(near(slash.start, 1 - G) && slash.start + slash.length > 1, `사선 꾸밈음(레)은 박 바로 앞에서 시작해 뒤 음과 살짝 겹침 (${slash.start.toFixed(3)}~${(slash.start + slash.length).toFixed(3)})`);
+    const e = ev(76)[0];
+    const d = ev(74)[1];
+    T.check(near(e.start, 2) && near(d.start, 2.25) && near(mains[2].start, 2.5),
+      `사선 없는 꾸밈음(미·레)은 박(2초)에서 16분음표씩, 뒤 음(도)은 2.5초로 늦게 시작 (${e.start}, ${d.start}, ${mains[2].start})`);
+    T.check(e.start + e.length > d.start && d.start + d.length > mains[2].start, '꾸밈음 소리가 다음 음 시작까지 끊기지 않음 (살짝 겹침)');
+    T.check(near(mains[2].start + mains[2].length / Playback.NOTE_SHARE, 4), '뒤 음이 늦게 시작해도 마디 끝(4초)은 그대로');
+    const short = Playback.schedule(build('gsE5:8 gsD5:8 C5:8 r:8 r:q r:h'), { start: 0, end: 0, tonic: false });
+    const shortMain = short.events.find((x) => x.midi === 72);
+    T.check(near(shortMain.start, 2 * G) && short.events[0].start === 0, '사선 꾸밈음이 첫 음 앞이면 그만큼 앞에 두고 전체를 뒤로 밂');
+    const half = Playback.schedule(build('gD5:8 gE5:8 gF5:8 C5:8 r:8 r:q r:h'), { start: 0, end: 0, tonic: false });
+    const halfMain = half.events.find((x) => x.midi === 72);
+    T.check(near(halfMain.start, 0.25), `뒤 음이 짧으면 꾸밈음은 뒤 음 길이의 절반까지만 빌림 (8분 0.5초 → ${halfMain.start})`);
+    const lead = Playback.schedule(build('gsB4:8 C5:w'), { start: 0, end: 0, tonic: true });
+    T.check(near(lead.events.find((x) => x.midi === 72 && x.start > 0).start, Playback.LEAD_IN), '기준음 뒤에서는 첫 음의 박이 그대로');
+    T.check(r.events.filter((x) => x.grace).every((x) => x.sustain), '꾸밈음은 끝까지 소리를 유지(사라지지 않고 이어짐)');
   });
 
   // ---- MusicXML with grace notes ----
