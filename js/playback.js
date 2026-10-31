@@ -14,7 +14,7 @@
   // - without a slash and written as an eighth or longer (appoggiatura): on the beat, each taking its written length
   //   (at most half the note between them) from the note, which starts that much later.
   // Each sounds until a little into the next one.
-  const GRACE_LENGTH = 0.05;
+  const GRACE_LENGTH = 0.03;
   const GRACE_OVERLAP = 0.03;
   const LONG_GRACE = ['whole', 'half', 'quarter', 'eighth'];
   const TONIC_LENGTH = 0.7;
