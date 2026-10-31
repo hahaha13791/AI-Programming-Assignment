@@ -467,6 +467,7 @@
     row.forEach((info, k) => {
       const group = svgEl('g', { class: 'sv-measure', 'data-measure': info.index, 'data-number': info.number });
       svg.append(group);
+      const xStart = x;
       if (k === 0) {
         x += drawClef(group, info.clef, x + 2, yOf, false);
         // At a row start a key change shows its cancelling naturals too.
@@ -491,6 +492,21 @@
       drawTuplets(group, info, drawn, yOf);
       rowNotes.push(...drawn.map((d, i) => ({ ...d, note: info.notes[i].note, pos: info.notes[i].pos })));
       x += widths[k];
+      if (options.numberAll && k > 0) {
+        group.append(svgEl('text', { x: xStart + 2, y: 10, class: 'sv-number' }, String(info.number)));
+      }
+      // The strip: a highlight behind the chosen measures, and a press area over each whole measure.
+      const chosen = options.selected && info.index >= options.selected.start && info.index <= options.selected.end;
+      const pending = options.pending === info.index;
+      if (chosen || pending) {
+        svg.prepend(svgEl('rect', {
+          x: xStart + 1, y: yOf(TOP_LINE) - 12, width: x - xStart - 2, height: yOf(0) - yOf(TOP_LINE) + 24, rx: 6,
+          class: pending ? 'sv-pending' : 'sv-current', 'data-measure': info.index,
+        }));
+      }
+      if (options.hit) {
+        group.append(svgEl('rect', { x: xStart, y: 0, width: x - xStart, height, class: 'sv-hit', 'data-measure': info.index }));
+      }
       const final = last && k === row.length - 1;
       svg.append(svgEl('line', { x1: x - (final ? 4 : 0), x2: x - (final ? 4 : 0), y1: yOf(TOP_LINE), y2: yOf(0), class: 'sv-bar' }));
       if (final) svg.append(svgEl('rect', { x: x - 2.5, y: yOf(TOP_LINE), width: 3, height: yOf(0) - yOf(TOP_LINE), class: 'sv-bar-end' }));
@@ -509,6 +525,27 @@
       drawTie(ties, d, next ?? null, sideOf(d));
     });
     return { svg, width: end + RIGHT_PAD, height };
+  }
+
+  // The whole score in one row of a fixed height (px), for choosing measures: every measure numbered, a press
+  // area over each, the chosen ones highlighted. options: { height, selected: { start, end }, pending (index) }.
+  // The box scrolls sideways; returns the SVG.
+  function strip(container, score, options = {}) {
+    const measures = N.resolve(score);
+    const infos = measures.map((measure, i) => measureInfo(measure, i, i ? measures[i - 1] : null));
+    const natural = STAFF_LEFT + RIGHT_PAD + infos.reduce((sum, info, k) => sum + info.min * 1.25 + prefixWidth(info, k === 0), 0);
+    const { svg, width, height } = drawRow(infos, 0, natural, true, 0, {
+      numberFirst: true, numberAll: true, hit: true, selected: options.selected, pending: options.pending,
+    });
+    const scale = (options.height ?? 80) / height;
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    svg.classList.add('sheet-strip');
+    svg.style.width = `${Math.round(width * scale)}px`;
+    svg.style.height = `${options.height ?? 80}px`;
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', options.label ?? `악보 띠, ${score.title}`);
+    container.replaceChildren(svg);
+    return svg;
   }
 
   function isWide(container) {
@@ -563,5 +600,5 @@
     return sheet;
   }
 
-  window.Sheet = { draw, shownAccidentals, keySigns, keyAlters, position };
+  window.Sheet = { draw, strip, shownAccidentals, keySigns, keyAlters, position };
 })();

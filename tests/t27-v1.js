@@ -6,7 +6,7 @@ T.test('27-6 옮겨 온 악보로 연습', async (T) => {
   T.check(ids[0] === 'old-1' && ids[1] === 'example-twinkle', `v1 악보가 순서대로 옮겨짐 (${ids.join(', ')})`);
   T.check(['example-fur-elise', 'example-greensleeves', 'example-mountain-king'].every((id) => ids.includes(id)), '새 예시가 더해짐');
   T.check(scoreId === 'old-1' && T.$('score-notice').hidden, '첫 악보(옛 악보)가 선택되고 안내 없음');
-  T.check(T.$('section-chips').children.length === 2, `구간 칩 ${T.$('section-chips').children.length}개 (3/4 3마디 → 1~2, 3마디)`);
+  T.check(T.$('score-strip').querySelectorAll('.sv-hit').length === 3 && section.label === '1~2마디', '악보 띠에 3마디, 기본 구간 1~2마디');
   T.check(await T.listen(), '재생 후 입력 풀림');
   T.check(current.length === 4, `첫 구간(1~2마디) 음 ${current.length}개`);
   T.enterNotes(current);

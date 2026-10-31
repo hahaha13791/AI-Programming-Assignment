@@ -158,8 +158,9 @@ T.test('27-6 반짝반짝 작은 별: 확장 4와 같음', async (T) => {
   T.setMode('score');
   T.check(scoreId === 'example-twinkle', '처음 고른 악보는 반짝반짝 작은 별');
   const old = Score.sections(v1Twinkle()).map((item) => ({ ...item, time: 4 }));
-  T.check(eq(scoreSections(), old), `구간이 확장 4와 같음 (${old.length}개)`);
-  T.check(eq(Score.schedule(scoreSections()[0].notes), Score.schedule(old[0].notes)), '재생 시각·음높이가 확장 4와 같음');
+  // From TODO 31 sections are chosen on the strip; the default (first two measures) is expansion 4's first section.
+  T.check(eq(section, old[0]), `기본 구간이 확장 4의 첫 구간과 같음 (${section.label})`);
+  T.check(eq(Score.schedule(section.notes), Score.schedule(old[0].notes)), '재생 시각·음높이가 확장 4와 같음');
   T.check(await T.listen(), '재생 후 입력 풀림');
   T.enterNotes(current);
   T.submit();

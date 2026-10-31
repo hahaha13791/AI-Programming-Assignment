@@ -61,7 +61,14 @@
             <button type="button" class="btn btn-small" id="btn-new-score">새 악보</button>
             <button type="button" class="btn btn-small" id="btn-edit-score">편집</button>
           </div>
-          <div class="section-chips" id="section-chips" role="radiogroup" aria-label="구간"></div>
+          <div class="section-chips length-chips" id="length-chips" role="radiogroup" aria-label="구간 길이">
+            <button type="button" class="section-chip" role="radio" aria-checked="false" data-length="1">1마디</button>
+            <button type="button" class="section-chip" role="radio" aria-checked="true" data-length="2">2마디</button>
+            <button type="button" class="section-chip" role="radio" aria-checked="false" data-length="4">4마디</button>
+            <button type="button" class="section-chip" role="radio" aria-checked="false" data-length="custom">직접</button>
+            <span class="strip-hint" id="strip-hint" aria-live="polite"></span>
+          </div>
+          <div class="score-strip" id="score-strip"></div>
         </div>
       </div>
     </section>

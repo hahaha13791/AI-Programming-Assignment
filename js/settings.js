@@ -36,5 +36,32 @@
     }
   }
 
-  window.Settings = { get, set, STORAGE_KEY, DEFAULTS, ALLOWED };
+  // 내 악보: the section last chosen in each score, { start, length (1, 2, 4 or 'custom'), end }.
+  const SECTIONS_KEY = 'ltw.sections.v1';
+  let sections = {};
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(SECTIONS_KEY) || '{}');
+    if (parsed && typeof parsed === 'object') sections = parsed;
+  } catch {
+    sections = {};
+  }
+
+  function getSection(id) {
+    const value = sections[id];
+    if (!value || !Number.isInteger(value.start) || ![1, 2, 4, 'custom'].includes(value.length)) return null;
+    if (value.length === 'custom' && !Number.isInteger(value.end)) return null;
+    return { start: value.start, length: value.length, end: value.end };
+  }
+
+  function setSection(id, value) {
+    sections = { ...sections, [id]: value };
+    try {
+      window.localStorage.setItem(SECTIONS_KEY, JSON.stringify(sections));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  window.Settings = { get, set, getSection, setSection, STORAGE_KEY, SECTIONS_KEY, DEFAULTS, ALLOWED };
 })();

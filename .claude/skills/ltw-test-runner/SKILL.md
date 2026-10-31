@@ -21,7 +21,7 @@ python .claude/skills/ltw-test-runner/scripts/run.py tests/t27.js --widths 375,1
 
 - 기본 폭: 320, 360, 375, 412, 480, 520, 600, 680, 768, 900, 1000 (11개). 480px 이하에서는 스크롤바를 숨겨 휴대폰과 같은 폭으로 배치한다.
 - 출력: FAIL 줄만 `[width N]`을 붙여 보여 주고, 마지막에 `PASS n / FAIL m`을 보여 준다. 모두 PASS일 때만 종료 코드가 0이다. `--verbose`를 주면 PASS 줄도 보인다.
-- 빈 브라우저 프로필로 열기 때문에 localStorage는 비어 있다. 내 악보는 예시 악보부터 시작한다. 테스트에서 저장소를 바꿨다면 끝에 `localStorage.removeItem(Scores.STORAGE_KEY)`로 되돌리고, 고른 악보도 첫 악보로 돌려놓는다(뒤에 도는 smoke.js가 영향을 받는다).
+- 빈 브라우저 프로필로 열고, 폭마다 페이지를 열 때 localStorage를 비운다(iframe끼리 저장소를 함께 쓰므로). 내 악보는 예시 악보부터 시작한다. 테스트에서 저장소를 바꿨다면 끝에 `localStorage.removeItem(Scores.STORAGE_KEY)`로 되돌리고, 고른 악보도 첫 악보로 돌려놓는다(뒤에 도는 smoke.js가 영향을 받는다).
 - `--head <파일.js>`: 앱 스크립트보다 먼저 실행할 스크립트. 예전 저장값(v1)이 있는 브라우저처럼, 앱이 열리기 전 상태를 만들 때 쓴다(예: `--head tests/t27-v1.head.js tests/t27-v1.js`). 폭마다 iframe이 새로 열릴 때 다시 실행된다.
 
 ## 단계 테스트를 쓰는 순서

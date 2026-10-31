@@ -60,8 +60,8 @@ for (const lv of ['easy', 'hard']) {
 T.test('내 악보', async (T) => {
   T.setMode('score');
   T.check(T.$('score-select').options.length > 0, '예시 악보가 있음');
-  const chips = T.$('section-chips').children.length;
-  T.check(chips > 1, `구간 칩 ${chips}개`);
+  const measures = T.$('score-strip').querySelectorAll('.sv-hit').length;
+  T.check(measures > 1, `악보 띠에 마디 ${measures}개`);
   T.check(await T.listen(), '재생 후 입력 풀림');
   T.enterNotes(current);
   T.submit();
@@ -69,6 +69,9 @@ T.test('내 악보', async (T) => {
   const first = section.label;
   T.next();
   T.check(section.label !== first, `다음 문제는 다음 구간 (${section.label})`);
+  // The app remembers the section per score; forget it so the tests after this start from the first.
+  Settings.setSection(scoreId, null);
+  localStorage.removeItem(Settings.SECTIONS_KEY);
   T.check(T.noHorizontalOverflow(), '가로 스크롤 없음');
   T.setMode('melody');
 });

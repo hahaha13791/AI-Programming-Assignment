@@ -48,8 +48,11 @@ const MODES = {
       input: '들은 음을 오선에 순서대로 찍어 보세요. 리듬은 적지 않아요.',
       empty: "저장된 악보가 없어요. '새 악보'로 만들어 보세요.",
       noNotes: "이 악보에는 음이 없어요. '편집'에서 음을 넣어 보세요.",
-      // Until the score view draws the v2 notation (TODO 29), scores beyond the expansion 4 range wait.
+      // Until practice works on v2 scores (TODO 33), scores beyond the expansion 4 range wait.
       pending: '이 악보는 곧 그려져요. 지금은 다른 악보로 연습해 주세요.',
+      restOnly: '이 구간에는 음이 없어요. 다른 마디를 골라 보세요.',
+      // Until the input staff scrolls (TODO 32), it holds eight notes.
+      tooLong: '음이 8개 넘는 구간은 곧 받아 적을 수 있어요. 지금은 더 짧게 골라 보세요.',
     },
   },
 };
@@ -149,7 +152,8 @@ function renderScorePicker() {
   select.disabled = !list.length || editing;
   $('btn-new-score').disabled = editing;
   updateEditButton();
-  for (const chip of $('section-chips').children) chip.disabled = editing;
+  for (const chip of $('length-chips').querySelectorAll('button')) chip.disabled = editing;
+  $('score-strip').classList.toggle('is-disabled', editing);
 }
 
 // The editor. editingId: undefined while closed, null for a new score, otherwise the id of the score being edited.
@@ -245,7 +249,6 @@ $('btn-edit-score').addEventListener('click', () => {
   }
   scores.remove(scoreId);
   scoreId = scores.list()[0]?.id ?? null;
-  sectionIndex = 0;
   backToPractice();
 });
 $('editor-cancel').addEventListener('click', backToPractice);
@@ -254,7 +257,8 @@ $('editor-save').addEventListener('click', () => {
   const saved = scores.save(Notation.fromLegacy({ ...editor.getScore(), id: editingId ?? undefined }));
   if (!saved) return;
   scoreId = saved.id;
-  sectionIndex = 0;
+  // A saved score is split again from its first measure (its old section may no longer exist).
+  Settings.setSection(saved.id, null);
   backToPractice();
 });
 // Deleting takes a second press (no browser dialog). Any other press in the editor, or a few seconds, undoes the first.
@@ -269,7 +273,6 @@ $('editor-delete').addEventListener('click', () => {
   scores.remove(editingId);
   if (scoreId === editingId) {
     scoreId = scores.list()[0]?.id ?? null;
-    sectionIndex = 0;
   }
   backToPractice();
 });
@@ -277,39 +280,138 @@ $('editor').addEventListener('click', (event) => {
   if (!event.target.closest('#editor-delete')) resetDelete();
 }, true);
 
-// 내 악보 practice: the chosen score is split into sections, practised one at a time.
-let sectionIndex = 0;
-let section = null; // { start, end, notes (with rests), label, time }
+// 내 악보 practice: one section of the chosen score at a time. The user picks a length (1, 2, 4 measures or 직접)
+// and presses a measure on the strip; 다음 문제 moves on by the same length. Each score remembers its section.
+let scoreReason = null; // why there's nothing to practise (a hint key), or null
+let section = null; // the section being practised: { start, end, notes (v1, with rests), label, time }
+let pendingStart = null; // 직접: the first measure pressed, waiting for the second
 
-// The practice screen still works on the expansion 4 (v1) shape; v2 scores within that range are converted.
-function scoreSections() {
-  const score = Notation.toLegacy(scoreId && scores.get(scoreId));
-  return score ? Score.sections(score).map((item) => ({ ...item, time: score.time })) : [];
+function chosenScore() {
+  return scoreId ? scores.get(scoreId) : null;
 }
 
-// One chip per section; the chosen one is checked and scrolled into view (the row scrolls sideways).
-function renderSectionChips(list) {
-  const row = $('section-chips');
-  const chips = list.map((item, i) => {
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = 'section-chip';
-    chip.setAttribute('role', 'radio');
-    chip.setAttribute('aria-checked', String(i === sectionIndex));
-    chip.textContent = item.label;
-    chip.disabled = editingId !== undefined;
-    chip.addEventListener('click', () => {
-      sectionIndex = i;
-      newQuestion();
-    });
-    return chip;
-  });
-  row.replaceChildren(...chips);
-  const chosen = chips[sectionIndex];
-  if (chosen && (chosen.offsetLeft < row.scrollLeft || chosen.offsetLeft + chosen.offsetWidth > row.scrollLeft + row.clientWidth)) {
-    row.scrollLeft = chosen.offsetLeft - 8;
+// The chosen section of the score: { start, end, length }, from memory or the default (first two measures).
+function selection(score = chosenScore()) {
+  if (!score) return null;
+  const last = score.measures.length - 1;
+  const saved = Settings.getSection(score.id);
+  const length = saved?.length ?? 2;
+  const start = Math.min(Math.max(saved?.start ?? 0, 0), last);
+  const end = length === 'custom' ? Math.min(Math.max(saved.end ?? start, start), last) : Math.min(start + length - 1, last);
+  return { start, end, length };
+}
+
+function select(start, length, end) {
+  Settings.setSection(scoreId, { start, length, end });
+}
+
+// Sounding notes in measures start..end (a note tied over from before belongs to the earlier section).
+function soundingCount(score, start, end) {
+  return score.measures.slice(start, end + 1).flatMap((m) => m.notes)
+    .filter((note) => !note.rest && note.tie !== 'stop' && note.tie !== 'both').length;
+}
+
+// The next section of the same length after this one, skipping rest-only ones; after the last comes the first.
+function nextSelection() {
+  const score = chosenScore();
+  const sel = selection(score);
+  if (!score || !sel) return;
+  const size = sel.end - sel.start + 1;
+  const count = score.measures.length;
+  let start = sel.end + 1;
+  for (let tries = 0; tries < count; tries++) {
+    if (start >= count) start = 0;
+    const end = Math.min(start + size - 1, count - 1);
+    if (soundingCount(score, start, end)) {
+      select(start, sel.length, sel.length === 'custom' ? end : undefined);
+      return;
+    }
+    start = end + 1;
   }
 }
+
+function measureLabel(score, start, end) {
+  const numbers = Notation.resolve(score).map((m) => m.number);
+  return end > start ? `${numbers[start]}~${numbers[end]}마디` : `${numbers[start]}마디`;
+}
+
+// The section to practise, if the score can be practised (until TODO 33: within the expansion 4 range) and the
+// section has notes (until TODO 32: at most eight). Otherwise null and the reason for the hint.
+function practiceSection() {
+  const score = chosenScore();
+  const sel = selection(score);
+  if (!score || !sel) return { section: null, reason: scoreId ? 'noNotes' : 'empty' };
+  if (scoreEditProblem()) return { section: null, reason: 'pending' };
+  const legacy = Notation.toLegacy(score);
+  const measures = Score.splitMeasures(legacy.notes, legacy.time);
+  const notes = measures.slice(sel.start, sel.end + 1).flat();
+  const pitched = notes.filter((note) => !Rhythm.TYPES[note.type].rest).length;
+  if (!pitched) return { section: null, reason: 'restOnly' };
+  if (pitched > 8) return { section: null, reason: 'tooLong' };
+  return { section: { start: sel.start, end: sel.end, notes, label: measureLabel(score, sel.start, sel.end), time: legacy.time } };
+}
+
+// The length chips and the strip, with the chosen measures highlighted and scrolled into view.
+function renderStrip() {
+  const score = chosenScore();
+  const sel = selection(score);
+  for (const chip of $('length-chips').querySelectorAll('[data-length]')) {
+    const value = chip.dataset.length === 'custom' ? 'custom' : Number(chip.dataset.length);
+    chip.setAttribute('aria-checked', String(Boolean(sel) && value === sel.length));
+  }
+  $('strip-hint').textContent = pendingStart !== null ? '끝 마디를 누르세요' : '';
+  const box = $('score-strip');
+  if (!score) {
+    box.replaceChildren();
+    return;
+  }
+  const scroll = box.scrollLeft;
+  const draw = () => Sheet.strip(box, score, {
+    height: box.clientHeight || 80, selected: sel, pending: pendingStart ?? undefined,
+    label: `악보 띠, ${score.title}. 마디를 눌러 연습할 구간을 고르세요. 지금 ${measureLabel(score, sel.start, sel.end)}`,
+  });
+  let svg = draw();
+  // A scrollbar takes some height once the strip is wider than the box: fit the drawing into what is left.
+  if (box.clientHeight && Math.abs(svg.getBoundingClientRect().height - box.clientHeight) > 0.5) svg = draw();
+  box.scrollLeft = scroll;
+  const marks = [...svg.querySelectorAll('.sv-current, .sv-pending')];
+  if (marks.length) {
+    const boxRect = box.getBoundingClientRect();
+    const left = Math.min(...marks.map((m) => m.getBoundingClientRect().left)) - boxRect.left;
+    const right = Math.max(...marks.map((m) => m.getBoundingClientRect().right)) - boxRect.left;
+    if (left < 0 || right > box.clientWidth) box.scrollLeft += left - 12;
+  }
+}
+
+$('length-chips').addEventListener('click', (event) => {
+  const chip = event.target.closest('[data-length]');
+  if (!chip || chip.disabled || !scoreId) return;
+  const sel = selection();
+  pendingStart = null;
+  if (chip.dataset.length === 'custom') select(sel.start, 'custom', sel.end);
+  else select(sel.start, Number(chip.dataset.length));
+  newQuestion();
+});
+
+// A press on a measure: with a length chosen it starts the section there; with 직접 the first press marks the start
+// and the second the end (either way round).
+$('score-strip').addEventListener('click', (event) => {
+  const hit = event.target.closest('.sv-hit');
+  if (!hit || editingId !== undefined || !scoreId) return;
+  const index = Number(hit.dataset.measure);
+  const sel = selection();
+  if (sel.length !== 'custom') {
+    select(index, sel.length);
+  } else if (pendingStart === null) {
+    pendingStart = index;
+    renderStrip();
+    return;
+  } else {
+    select(Math.min(pendingStart, index), 'custom', Math.max(pendingStart, index));
+    pendingStart = null;
+  }
+  newQuestion();
+});
 
 const staff = Staff.create({
   container: $('staff-area'),
@@ -384,14 +486,14 @@ function newQuestion() {
       measures: hard ? null : current.measures.length,
     });
   } else if (mode === 'score') {
-    const list = scoreSections();
-    if (sectionIndex >= list.length) sectionIndex = 0;
-    section = list[sectionIndex] ?? null;
+    const practice = practiceSection();
+    section = practice.section;
+    scoreReason = practice.reason ?? null;
     // Only the pitches are written down; rests and lengths are heard, not entered.
     current = section ? section.notes.filter((note) => !Rhythm.TYPES[note.type].rest)
       .map(({ step, accidental }) => ({ step, accidental })) : null;
     staff.reset(current ? current.length : 0, { topStep: HARMONY_TOP_STEP });
-    renderSectionChips(list);
+    renderStrip();
     renderScoreNotice();
     updateEditButton();
   } else {
@@ -402,7 +504,7 @@ function newQuestion() {
   $('btn-tonic').textContent = `기준음(${mode === 'score' ? scoreTonic().label : '도'}) 듣기`;
   const waiting = mode === 'score' && scoreId && scoreEditProblem();
   showScorePreview(waiting ? scores.get(scoreId) : null);
-  setHint(current ? 'ready' : waiting ? 'pending' : scoreId ? 'noNotes' : 'empty');
+  setHint(current ? 'ready' : mode === 'score' ? scoreReason : 'empty');
 }
 
 function element(tag, className, text) {
@@ -493,7 +595,7 @@ function nextButton() {
   next.id = 'btn-next';
   next.addEventListener('click', () => {
     // 내 악보 goes through the score section by section, back to the first after the last.
-    if (mode === 'score') sectionIndex = (sectionIndex + 1) % Math.max(1, scoreSections().length);
+    if (mode === 'score') nextSelection();
     newQuestion();
   });
   return next;
@@ -557,12 +659,10 @@ function playRhythm() {
   return Sound.playEvents(events, total);
 }
 
-// The measures 내 악보 plays: the section, or (until TODO 33) the first two measures of a score that can't be
-// practised yet.
+// The measures 내 악보 plays: the chosen section (also when it can't be practised yet, so it can be heard).
 function playRange() {
-  if (section) return { start: section.start, end: section.end };
-  const score = scoreId && scores.get(scoreId);
-  return score && scoreEditProblem() ? { start: 0, end: Math.min(1, score.measures.length - 1) } : null;
+  const sel = selection();
+  return sel && soundingCount(chosenScore(), sel.start, sel.end) ? { start: sel.start, end: sel.end } : null;
 }
 
 // 내 악보: the section as written (key, rhythm, tempo) at the chosen speed, after the tonic and a pause when
@@ -645,9 +745,9 @@ for (const button of document.querySelectorAll('.chord-type')) {
   });
 }
 
-// The chip row has no visible scrollbar, so a vertical mouse wheel scrolls it sideways when it overflows.
-$('section-chips').addEventListener('wheel', (event) => {
-  const row = $('section-chips');
+// A vertical mouse wheel scrolls the strip sideways when it overflows.
+$('score-strip').addEventListener('wheel', (event) => {
+  const row = $('score-strip');
   if (row.scrollWidth <= row.clientWidth || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
   row.scrollLeft += event.deltaY;
   event.preventDefault();
@@ -655,7 +755,7 @@ $('section-chips').addEventListener('wheel', (event) => {
 
 $('score-select').addEventListener('change', (event) => {
   scoreId = event.target.value;
-  sectionIndex = 0;
+  pendingStart = null;
   newQuestion();
 });
 

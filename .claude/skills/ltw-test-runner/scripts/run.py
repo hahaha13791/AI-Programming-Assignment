@@ -29,6 +29,8 @@ FRAME_HEIGHT = 900
 SCRIPTS = Path(__file__).resolve().parent
 
 ERROR_COLLECTOR = """<script>
+// Every width starts from an empty browser storage (the iframes share it); --head scripts run after this.
+try { localStorage.clear(); } catch (e) {}
 window.__errors = [];
 addEventListener('error', (e) => __errors.push(String(e.message)));
 addEventListener('unhandledrejection', (e) => __errors.push('rejection: ' + (e.reason && e.reason.message || e.reason)));

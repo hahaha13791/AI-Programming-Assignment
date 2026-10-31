@@ -254,6 +254,7 @@ button:focus-visible {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 2px;
   padding: var(--space-3) var(--space-2);
   border: 1px solid var(--border);
@@ -295,8 +296,56 @@ button:focus-visible {
   position: absolute;
   inset: 0;
   display: grid;
-  grid-template-rows: 1fr 1fr;
+  grid-template-rows: 34px 28px 1fr;
   gap: 6px;
+}
+
+/* The 악보 panel holds a one-row strip of the score, so the level area is this tall in every mode; the
+   difficulty buttons fill it (4-0-3: switching modes doesn't move the staff). */
+.level-area {
+  height: 160px;
+}
+
+.difficulty {
+  height: 100%;
+}
+
+.score-strip {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.sheet-strip {
+  display: block;
+}
+
+.sv-hit {
+  fill: transparent;
+  cursor: pointer;
+}
+
+.sv-pending {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+}
+
+.length-chips {
+  align-items: stretch;
+}
+
+.strip-hint {
+  flex: none;
+  align-self: center;
+  margin-left: 2px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
 }
 
 .score-row {
