@@ -23,7 +23,14 @@
   function context() {
     if (!ctx) ctx = new AudioContext();
     if (ctx.state === 'suspended') ctx.resume();
+    // The instrument's recordings start decoding with the first sound; until they are ready the tone is synthesized.
+    if (typeof Sampler !== 'undefined') Sampler.prepare(ctx);
     return ctx;
+  }
+
+  // For tests: when window.__soundLog is an array, each scheduled note is noted there (how it is sounded).
+  function note(kind, midi, start, length) {
+    if (Array.isArray(window.__soundLog)) window.__soundLog.push({ kind, midi, start, length, instrument: kind === 'sample' ? Sampler.current : null });
   }
 
   function stop() {
@@ -40,7 +47,20 @@
 
   // sustain: hold the tone for its whole length (rhythm notes, so a half note and "quarter + rest" sound
   // different); otherwise it decays like a plucked note.
-  function scheduleNote(audio, midi, start, length = NOTE_LENGTH, peak = PEAK_GAIN, sustain = false) {
+  // kind 'click' (the rhythm count-in) is always the synthesized tone; other notes use the instrument's recordings
+  // once they are ready (PRD #4-I-2).
+  function scheduleNote(audio, midi, start, length = NOTE_LENGTH, peak = PEAK_GAIN, sustain = false, kind = 'note') {
+    const voice = kind !== 'click' && typeof Sampler !== 'undefined' ? Sampler.play(audio, midi, start, length, peak) : null;
+    if (voice) {
+      const entry = { osc: voice.source, gain: voice.gain };
+      active.push(entry);
+      voice.source.addEventListener('ended', () => {
+        active = active.filter((e) => e !== entry);
+      });
+      note('sample', midi, start, length);
+      return;
+    }
+    note('synth', midi, start, length);
     const osc = audio.createOscillator();
     const gain = audio.createGain();
     osc.type = 'triangle';
@@ -103,12 +123,18 @@
     stop();
     const time = audio.currentTime + 0.05;
     let end = time + total;
-    for (const { start, length, midi, peak, sustain } of events) {
-      scheduleNote(audio, midi, time + start, length, peak, sustain);
+    for (const { start, length, midi, peak, sustain, kind } of events) {
+      scheduleNote(audio, midi, time + start, length, peak, sustain, kind);
       end = Math.max(end, time + start + length);
     }
     return end - audio.currentTime;
   }
 
-  window.Sound = { play, playEvents, stop };
+  // The first press anywhere (a user gesture, so audio may start) gets the recordings decoding before the first
+  // "문제 듣기", so that one is already the instrument.
+  const warm = () => context();
+  document.addEventListener('pointerdown', warm, { once: true, capture: true });
+  document.addEventListener('keydown', warm, { once: true, capture: true });
+
+  window.Sound = { play, playEvents, stop, context };
 })();
