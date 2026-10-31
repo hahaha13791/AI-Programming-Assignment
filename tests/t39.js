@@ -61,8 +61,11 @@
     T.check(near(slash.start, 1 - G) && slash.start + slash.length > 1, `사선 꾸밈음(레)은 박 바로 앞에서 시작해 뒤 음과 살짝 겹침 (${slash.start.toFixed(3)}~${(slash.start + slash.length).toFixed(3)})`);
     const e = ev(76)[0];
     const d = ev(74)[1];
-    T.check(near(e.start, 2) && near(d.start, 2.25) && near(mains[2].start, 2.5),
-      `사선 없는 꾸밈음(미·레)은 박(2초)에서 16분음표씩, 뒤 음(도)은 2.5초로 늦게 시작 (${e.start}, ${d.start}, ${mains[2].start})`);
+    T.check(near(e.start, 2) && near(d.start, 2 + G) && near(mains[2].start, 2 + 2 * G),
+      `사선 없이 16분으로 짧게 적힌 꾸밈음(미·레)은 박(2초)에서 ${G}초씩 붙여 치고, 뒤 음(도)은 그만큼만 늦게 (${e.start}, ${d.start}, ${mains[2].start})`);
+    const long = Playback.schedule(build('gD5:8 C5:h r:h'), { start: 0, end: 0, tonic: false });
+    const longMain = long.events.find((x) => x.midi === 72);
+    T.check(near(long.events[0].start, 0) && near(longMain.start, 0.5), `8분음표로 적힌 긴 앞꾸밈음은 적힌 길이(0.5초)만큼 빌림 (${longMain.start})`);
     T.check(e.start + e.length > d.start && d.start + d.length > mains[2].start, '꾸밈음 소리가 다음 음 시작까지 끊기지 않음 (살짝 겹침)');
     T.check(near(mains[2].start + mains[2].length / Playback.NOTE_SHARE, 4), '뒤 음이 늦게 시작해도 마디 끝(4초)은 그대로');
     const short = Playback.schedule(build('gsE5:8 gsD5:8 C5:8 r:8 r:q r:h'), { start: 0, end: 0, tonic: false });

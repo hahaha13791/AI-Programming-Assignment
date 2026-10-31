@@ -7,12 +7,16 @@
   const NOTE_PEAK = 0.3;
   const CHORD_PEAK = 0.5; // a chord's notes share this, so many at once don't distort (as in harmony mode)
   // Grace notes run on into the note they lead to (legato), the way each kind is played:
-  // - with a slash (acciaccatura): just before the beat, each this long (at speed 1); the note keeps its beat.
-  // - without (appoggiatura): on the beat, each taking a sixteenth (at most half the note between them) from the
-  //   note, which starts that much later.
+  // - with a slash (acciaccatura): crushed in just before the beat, each this long (at speed 1); the note keeps its
+  //   beat.
+  // - without a slash but written short (a 16th or shorter): crushed in the same way, but on the beat; the note
+  //   starts that much later.
+  // - without a slash and written as an eighth or longer (appoggiatura): on the beat, each taking its written length
+  //   (at most half the note between them) from the note, which starts that much later.
   // Each sounds until a little into the next one.
-  const GRACE_LENGTH = 0.09;
+  const GRACE_LENGTH = 0.05;
   const GRACE_OVERLAP = 0.03;
+  const LONG_GRACE = ['whole', 'half', 'quarter', 'eighth'];
   const TONIC_LENGTH = 0.7;
   // The tonic, then a pause as long as melody mode's: tonic 0.7s + gap 0.15s + a silent beat 0.7s + gap 0.15s.
   const LEAD_IN = 1.7;
@@ -56,12 +60,12 @@
     const placeGraces = (item) => {
       if (!graces.length) return 0;
       const onBeat = item && graces.some((grace) => !grace.slash);
+      const long = onBeat && graces.some((grace) => !grace.slash && LONG_GRACE.includes(grace.type));
       let slot = GRACE_LENGTH / speed;
-      let first = time - graces.length * slot;
-      if (onBeat) {
-        const sixteenth = 60 / item.tempo / 4 / speed;
-        slot = Math.min(sixteenth, seconds(item.note, item.tempo, speed) / 2 / graces.length);
-        first = time;
+      let first = onBeat ? time : time - graces.length * slot;
+      if (long) {
+        const written = seconds({ type: graces[0].type, dots: graces[0].dots }, item.tempo, speed);
+        slot = Math.min(written, seconds(item.note, item.tempo, speed) / 2 / graces.length);
       }
       graces.forEach((grace, n) => {
         for (const pitch of grace.pitches) {
@@ -78,7 +82,7 @@
     all.forEach((item, k) => {
       if (item.m < start || item.m > end) return;
       if (item.note.grace) {
-        graces.push({ pitches: N.pitchesOf(item.note), slash: Boolean(item.note.slash) });
+        graces.push({ pitches: N.pitchesOf(item.note), slash: Boolean(item.note.slash), type: item.note.type, dots: item.note.dots ?? 0 });
         return;
       }
       const delay = placeGraces(item);
