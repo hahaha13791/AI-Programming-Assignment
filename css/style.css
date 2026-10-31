@@ -530,6 +530,27 @@ button:focus-visible {
   font-size: 20px;
 }
 
+.sv-rest-stem,
+.sv-rest-curl,
+.sv-tuplet-bracket {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+}
+
+.sv-rest-stem {
+  stroke-width: 1.8;
+}
+
+.sv-tuplet-number {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 12px;
+  font-style: italic;
+  font-weight: 700;
+  text-anchor: middle;
+  fill: currentColor;
+}
+
 .sv-open {
   fill: none;
   stroke: currentColor;

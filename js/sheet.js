@@ -21,6 +21,8 @@
   const MEASURE_PAD_RIGHT = 6;
   const HEAD_RX = 6.5;
   const STEM_DX = 6;
+  const BEAM = 4.5; // beam thickness
+  const BEAM_GAP = 7; // from one beam to the next
   const MIN = { head: 14, whole: 18, rest: 12, accidental: 12, dot: 7, flag: 8, gap: 3 };
   // Wide boxes take four measures to a row, narrow ones two; drawn in these viewBox widths.
   const WIDE_MIN = 560;
@@ -97,6 +99,46 @@
     return pos >= MIDDLE ? -1 : 1;
   }
 
+  // Beam groups: notes with flags (no rests between) in the same beat, which is a quarter in simple time and a
+  // dotted quarter in compound time (6/8, 9/8, 12/8, 3/8). A tuplet's notes are beamed together.
+  // Returns arrays of note indices, two or more each.
+  function beamGroups(notes, time) {
+    const unit = time[1] === 8 && time[0] % 3 === 0 ? 3 / 8 : 1 / 4;
+    const groups = [];
+    let current = null;
+    let start = 0;
+    let tuplet = -1;
+    notes.forEach((note, i) => {
+      if (note.tupletStart) tuplet = i;
+      const inTuplet = note.tuplet ? tuplet : -1;
+      const beat = Math.floor(start / unit + 1e-9);
+      start += N.toNumber(N.duration(note));
+      const flagged = !note.rest && FLAGS[note.type];
+      if (flagged && current && (current.beat === beat || (inTuplet >= 0 && current.tuplet === inTuplet))) {
+        current.members.push(i);
+      } else {
+        if (current) groups.push(current.members);
+        current = flagged ? { beat, tuplet: inTuplet, members: [i] } : null;
+      }
+    });
+    if (current) groups.push(current.members);
+    return groups.filter((members) => members.length > 1);
+  }
+
+  // Tuplet groups: [first, last] note indices.
+  function tupletGroups(notes) {
+    const groups = [];
+    let first = null;
+    notes.forEach((note, i) => {
+      if (note.tupletStart) first = i;
+      if (note.tupletStop && first !== null) {
+        groups.push([first, i]);
+        first = null;
+      }
+    });
+    return groups;
+  }
+
   // Everything needed to space and draw one measure.
   function measureInfo(measure, index, prev) {
     const changes = {
@@ -108,14 +150,34 @@
     const notes = measure.notes.map((note, i) => {
       const pos = note.rest ? null : position(note.pitch, measure.clef);
       const stem = stemOf(note, pos);
-      const left = accidentals[i] !== null ? MIN.accidental * (Math.abs(accidentals[i]) === 2 ? 1.2 : 1) : 0;
-      const head = note.rest ? MIN.rest : note.type === 'whole' ? MIN.whole : MIN.head;
-      let right = (note.dots ?? 0) * MIN.dot;
-      if (FLAGS[note.type] && stem === 1) right = Math.max(right, MIN.flag);
-      return { note, pos, stem, accidental: accidentals[i], parts: { left, head, right }, min: left + head + right + MIN.gap };
+      // Where the stem ends, in steps: flags of short notes need a longer stem.
+      const length = STEM + Math.max(0, (FLAGS[note.type] ?? 0) - 1);
+      return { note, pos, stem, stemEnd: stem ? pos + stem * length : null, beam: null, accidental: accidentals[i] };
     });
+
+    // A beam group takes one stem direction (from the note furthest from the middle line) and level stems
+    // reaching past the furthest head.
+    const beams = beamGroups(measure.notes, measure.time).map((members) => {
+      const items = members.map((i) => notes[i]);
+      const far = items.reduce((a, b) => (Math.abs(b.pos - MIDDLE) > Math.abs(a.pos - MIDDLE) ? b : a));
+      const dir = far.pos >= MIDDLE ? -1 : 1;
+      const levels = Math.max(...items.map((item) => FLAGS[item.note.type]));
+      const reach = dir === 1 ? Math.max(...items.map((item) => item.pos)) : Math.min(...items.map((item) => item.pos));
+      const end = reach + dir * (STEM + (levels - 1) * 1);
+      items.forEach((item) => Object.assign(item, { stem: dir, stemEnd: end, beam: members }));
+      return { members, dir, end, levels };
+    });
+
+    for (const item of notes) {
+      const left = item.accidental !== null ? MIN.accidental * (Math.abs(item.accidental) === 2 ? 1.2 : 1) : 0;
+      const head = item.note.rest ? MIN.rest : item.note.type === 'whole' ? MIN.whole : MIN.head;
+      let right = (item.note.dots ?? 0) * MIN.dot;
+      if (FLAGS[item.note.type] && !item.beam && item.stem === 1) right = Math.max(right, MIN.flag);
+      item.parts = { left, head, right };
+      item.min = left + head + right + MIN.gap;
+    }
     const min = MEASURE_PAD_LEFT + MEASURE_PAD_RIGHT + notes.reduce((sum, n) => sum + n.min, 0);
-    return { ...measure, index, changes, notes, min, prevKey: prev?.key };
+    return { ...measure, index, changes, notes, beams, tuplets: tupletGroups(measure.notes), min, prevKey: prev?.key };
   }
 
   // Width of what goes before a measure's notes: a mid-row clef, key and time change.
@@ -178,13 +240,15 @@
     let up = TOP_LINE + 2;
     let down = -2;
     for (const info of row) {
-      for (const { pos, stem } of info.notes) {
+      for (const { pos, stemEnd } of info.notes) {
         if (pos === null) continue;
-        up = Math.max(up, pos + (stem === 1 ? STEM : 1) + 1);
-        down = Math.min(down, pos - (stem === -1 ? STEM : 1) - 1);
+        up = Math.max(up, pos + 1, (stemEnd ?? pos) + 1);
+        down = Math.min(down, pos - 1, (stemEnd ?? pos) - 1);
       }
     }
-    return { up, down };
+    // Tuplet numbers and ties sit a little beyond the stems or heads.
+    const extra = row.some((info) => info.tuplets.length || info.notes.some((n) => n.note.tie)) ? 2 : 0;
+    return { up: up + extra, down: down - extra };
   }
 
   function drawSigns(parent, signs, x, yOf) {
@@ -229,11 +293,25 @@
       return;
     }
     const y = yOf(MIDDLE);
-    parent.append(svgEl('path', {
-      d: `M${x - 1} ${y - 14} L${x + 4.5} ${y - 7.5} L${x - 0.5} ${y - 2} L${x + 4.5} ${y + 4.5}`
-        + ` C${x - 3} ${y + 1} ${x - 3} ${y + 8} ${x + 1.5} ${y + 11}`,
-      class: 'sv-rest',
-    }));
+    if (note.type === 'quarter') {
+      parent.append(svgEl('path', {
+        d: `M${x - 1} ${y - 14} L${x + 4.5} ${y - 7.5} L${x - 0.5} ${y - 2} L${x + 4.5} ${y + 4.5}`
+          + ` C${x - 3} ${y + 1} ${x - 3} ${y + 8} ${x + 1.5} ${y + 11}`,
+        class: 'sv-rest',
+      }));
+      return;
+    }
+    // Eighth, 16th and 32nd rests: a slanted stem with one, two or three hooks.
+    const hooks = FLAGS[note.type];
+    const top = y - 6 - (hooks - 1) * 4;
+    const bottom = y + 9 + (hooks > 2 ? 4 : 0);
+    parent.append(svgEl('line', { x1: x + 4 + (hooks - 1) * 1.5, y1: top, x2: x - 1, y2: bottom, class: 'sv-rest-stem' }));
+    for (let k = 0; k < hooks; k++) {
+      const hy = top + k * 8;
+      const hx = x + 4 + (hooks - 1) * 1.5 - k * 2;
+      parent.append(svgEl('circle', { cx: hx - 6, cy: hy + 1.5, r: 2.6, class: 'sv-fill sv-rest-hook' }));
+      parent.append(svgEl('path', { d: `M${hx - 6} ${hy + 3} Q${hx - 2} ${hy + 4} ${hx} ${hy}`, class: 'sv-rest-curl' }));
+    }
   }
 
   function drawFlags(parent, stemX, end, dir, count) {
@@ -254,7 +332,10 @@
     if (note.rest) {
       group.dataset.rest = '';
       drawRest(group, note, x, yOf);
-      return;
+      for (let d = 0; d < (note.dots ?? 0); d++) {
+        group.append(svgEl('circle', { cx: x + 10 + d * 6, cy: yOf(MIDDLE + 1), r: 2, class: 'sv-fill sv-dot' }));
+      }
+      return { x, y: yOf(MIDDLE), stem: 0 };
     }
     const y = yOf(pos);
     group.dataset.pos = pos;
@@ -278,12 +359,83 @@
       const onLine = pos % 2 === 0;
       group.append(svgEl('circle', { cx: x + 11 + d * 6, cy: onLine ? y - HALF : y, r: 2, class: 'sv-fill sv-dot' }));
     }
-    if (!stem) return;
+    if (!stem) return { x, y, stem: 0 };
     const stemX = x + stem * STEM_DX;
-    const end = y - stem * STEM * HALF;
+    const end = yOf(item.stemEnd);
     group.dataset.stem = stem === 1 ? 'up' : 'down';
     group.append(svgEl('line', { x1: stemX, x2: stemX, y1: y - stem, y2: end, class: 'sv-stem' }));
-    if (FLAGS[note.type]) drawFlags(group, stemX, end, stem, FLAGS[note.type]);
+    if (FLAGS[note.type] && !item.beam) drawFlags(group, stemX, end, stem, FLAGS[note.type]);
+    return { x, y, stem, stemX, end };
+  }
+
+  // Beams: one across the group, then for 16ths and 32nds a further beam between neighbours that both have it,
+  // or a short stub on a lone one (pointing to the neighbour it belongs with).
+  function drawBeams(parent, info, drawn) {
+    for (const beam of info.beams) {
+      const group = svgEl('g', { class: 'sv-beam-group', 'data-levels': beam.levels, 'data-size': beam.members.length });
+      parent.append(group);
+      const stems = beam.members.map((i) => drawn[i]);
+      const level = (i) => FLAGS[info.notes[i].note.type];
+      for (let L = 1; L <= beam.levels; L++) {
+        const y = stems[0].end + beam.dir * (L - 1) * BEAM_GAP - (beam.dir === 1 ? 0 : BEAM);
+        const rect = (x1, x2) => group.append(svgEl('rect', {
+          x: Math.min(x1, x2) - 0.7, y, width: Math.abs(x2 - x1) + 1.4, height: BEAM, class: 'sv-fill sv-beam', 'data-level': L,
+        }));
+        if (L === 1) {
+          rect(stems[0].stemX, stems[stems.length - 1].stemX);
+          continue;
+        }
+        beam.members.forEach((m, k) => {
+          if (level(m) < L) return;
+          const next = beam.members[k + 1];
+          const prev = beam.members[k - 1];
+          if (next !== undefined && level(next) >= L) rect(stems[k].stemX, stems[k + 1].stemX);
+          else if ((prev === undefined || level(prev) < L) && (next === undefined || level(next) < L)) {
+            // A lone short note: a stub towards the following note, or back towards the previous one at the end.
+            const toward = next !== undefined ? 1 : -1;
+            rect(stems[k].stemX, stems[k].stemX + toward * 8);
+          }
+        });
+      }
+    }
+  }
+
+  // Tuplets: the number (3, 5, ...) on the stem side; a bracket too unless the group is exactly one beam group.
+  function drawTuplets(parent, info, drawn, yOf) {
+    for (const [first, last] of info.tuplets) {
+      const items = drawn.slice(first, last + 1);
+      const stems = items.filter((d) => d.stem);
+      const above = !stems.length || stems.filter((d) => d.stem === 1).length * 2 >= stems.length;
+      const ends = items.map((d) => (d.stem ? d.end : d.y));
+      const y = above ? Math.min(...ends, yOf(TOP_LINE)) - 8 : Math.max(...ends, yOf(0)) + 14;
+      const x1 = items[0].x - 5;
+      const x2 = items[items.length - 1].x + 5;
+      const mid = (x1 + x2) / 2;
+      const note = info.notes[first].note;
+      const group = svgEl('g', { class: 'sv-tuplet', 'data-actual': note.tuplet.actual });
+      parent.append(group);
+      group.append(svgEl('text', { x: mid, y: y + 4, class: 'sv-tuplet-number' }, String(note.tuplet.actual)));
+      const beamed = info.beams.some((b) => b.members[0] === first && b.members[b.members.length - 1] === last);
+      if (!beamed) {
+        const hook = above ? 4 : -4;
+        group.append(svgEl('path', {
+          d: `M${x1} ${y + hook} L${x1} ${y} L${mid - 6} ${y} M${mid + 6} ${y} L${x2} ${y} L${x2} ${y + hook}`, class: 'sv-tuplet-bracket',
+        }));
+      }
+    }
+  }
+
+  // A tie: a curve from one head to the next, on the side away from the stems. When the row breaks between them,
+  // each row draws its half (to the row's end, or from the start of its first measure).
+  function drawTie(parent, from, to, side) {
+    const y = (from ?? to).y + side * 7;
+    const x1 = from ? from.x + 5 : to.x - 22;
+    const x2 = to ? to.x - 5 : from.x + 22;
+    const bend = side * 7;
+    parent.append(svgEl('path', {
+      d: `M${x1} ${y} Q${(x1 + x2) / 2} ${y + bend * 1.6} ${x2} ${y} Q${(x1 + x2) / 2} ${y + bend * 1.2} ${x1} ${y} Z`,
+      class: 'sv-fill sv-tie', 'data-half': from && to ? '' : from ? 'start' : 'end',
+    }));
   }
 
   function drawRow(row, r, width, last, short, options) {
@@ -311,6 +463,7 @@
     }
 
     let x = STAFF_LEFT;
+    const rowNotes = [];
     row.forEach((info, k) => {
       const group = svgEl('g', { class: 'sv-measure', 'data-measure': info.index, 'data-number': info.number });
       svg.append(group);
@@ -329,14 +482,31 @@
       const sizes = distribute(widths[k] - MEASURE_PAD_LEFT - MEASURE_PAD_RIGHT, info.notes.map((n) => n.min),
         info.notes.map((n) => N.toNumber(N.duration(n.note))));
       let nx = x + MEASURE_PAD_LEFT;
-      info.notes.forEach((item, i) => {
-        drawNote(group, item, nx + item.parts.left + item.parts.head / 2, yOf);
+      const drawn = info.notes.map((item, i) => {
+        const result = drawNote(group, item, nx + item.parts.left + item.parts.head / 2, yOf);
         nx += sizes[i];
+        return result;
       });
+      drawBeams(group, info, drawn);
+      drawTuplets(group, info, drawn, yOf);
+      rowNotes.push(...drawn.map((d, i) => ({ ...d, note: info.notes[i].note, pos: info.notes[i].pos })));
       x += widths[k];
       const final = last && k === row.length - 1;
       svg.append(svgEl('line', { x1: x - (final ? 4 : 0), x2: x - (final ? 4 : 0), y1: yOf(TOP_LINE), y2: yOf(0), class: 'sv-bar' }));
       if (final) svg.append(svgEl('rect', { x: x - 2.5, y: yOf(TOP_LINE), width: 3, height: yOf(0) - yOf(TOP_LINE), class: 'sv-bar-end' }));
+    });
+
+    const ties = svgEl('g', { class: 'sv-ties' });
+    svg.append(ties);
+    const starts = (n) => n.tie === 'start' || n.tie === 'both';
+    const stops = (n) => n.tie === 'stop' || n.tie === 'both';
+    // side: +1 draws below the heads (y grows downwards), -1 above. Away from the stem.
+    const sideOf = (d) => (d.stem ? d.stem : d.pos >= MIDDLE ? -1 : 1);
+    rowNotes.forEach((d, i) => {
+      if (i === 0 && stops(d.note)) drawTie(ties, null, d, sideOf(d));
+      if (!starts(d.note)) return;
+      const next = rowNotes[i + 1];
+      drawTie(ties, d, next ?? null, sideOf(d));
     });
     return { svg, width: end + RIGHT_PAD, height };
   }
