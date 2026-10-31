@@ -6,7 +6,7 @@ lib.js + 테스트 파일을 주입한다. 바깥 harness.html이 화면 폭마�
 
 사용법:
   python run.py <테스트.js> [<테스트.js> ...] [--browser edge|chrome|<경로>] [--widths 320,375,1000]
-                [--root <프로젝트 폴더>] [--budget <가상 ms>]
+                [--root <프로젝트 폴더>] [--budget <가상 ms>] [--head <먼저 실행할.js>]
 종료 코드: 모두 PASS면 0, FAIL·시간 초과·결과 없음이면 1.
 """
 
@@ -88,7 +88,7 @@ def find_root(arg):
     return SCRIPTS.parents[3]
 
 
-def build(root, tests, widths, frame_timeout):
+def build(root, tests, widths, frame_timeout, heads=()):
     work = Path(tempfile.gettempdir()) / 'ltw-test-run'
     shutil.rmtree(work, ignore_errors=True)
     work.mkdir(parents=True)
@@ -96,7 +96,13 @@ def build(root, tests, widths, frame_timeout):
     page = (root / 'index.html').read_text(encoding='utf-8')
     page = re.sub(r'(src|href)="((?:css|js)/[^"]+)"',
                   lambda m: f'{m.group(1)}="{(root / m.group(2)).as_uri()}"', page)
-    page = page.replace('<head>', '<head>\n' + ERROR_COLLECTOR, 1)
+    # Head scripts run before any app script (e.g. to put old data in localStorage before the app reads it).
+    head_tags = ''
+    for i, head in enumerate(heads):
+        name = f'head{i}_{Path(head).name}'
+        shutil.copy(head, work / name)
+        head_tags += f'\n<script src="{name}"></script>'
+    page = page.replace('<head>', '<head>\n' + ERROR_COLLECTOR + head_tags, 1)
 
     shutil.copy(SCRIPTS / 'lib.js', work / 'lib.js')
     tags = ['<script src="lib.js"></script>']
@@ -131,6 +137,7 @@ def main():
     parser.add_argument('--browser', default=os.environ.get('BROWSER', 'edge'))
     parser.add_argument('--widths', default=','.join(map(str, DEFAULT_WIDTHS)))
     parser.add_argument('--root')
+    parser.add_argument('--head', action='append', default=[], help='앱 스크립트보다 먼저 실행할 JS (여러 번 가능)')
     parser.add_argument('--budget', type=int, default=0, help='가상 시간 ms (기본: 폭 하나당 120초)')
     parser.add_argument('--verbose', action='store_true', help='PASS 줄도 모두 출력')
     args = parser.parse_args()
@@ -141,7 +148,7 @@ def main():
     frame_timeout = 120000
     budget = args.budget or frame_timeout * len(widths) + 10000
 
-    work = build(root, [Path(t).resolve() for t in args.tests], widths, frame_timeout)
+    work = build(root, [Path(t).resolve() for t in args.tests], widths, frame_timeout, [Path(h).resolve() for h in args.head])
     dom = run(browser, work, budget)
     match = re.search(r'<pre id="test-out">(.*?)</pre>', dom, re.S)
     text = html.unescape(match.group(1)) if match else ''

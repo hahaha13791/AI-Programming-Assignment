@@ -307,7 +307,7 @@ button:focus-visible {
 
 .score-select {
   flex: 1 1 auto;
-  min-width: 0;
+  min-width: 5.5rem; /* the title stays readable even with the confirm label beside it (fits 320px) */
   padding: 0 var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);

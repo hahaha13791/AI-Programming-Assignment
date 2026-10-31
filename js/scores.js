@@ -1,51 +1,43 @@
 (function () {
-  // Scores the user writes, kept in this browser. A score: { id, title, time (beats per x/4 measure),
-  // notes: [{ type, step, accidental }, ...] } where a rest is { type: 'r' } with no pitch.
-  const STORAGE_KEY = 'ltw.scores.v1';
-  const MAX_MEASURES = 12;
+  // Scores the user keeps in this browser, in the v2 format (notation.js). Expansion 4 stored v1
+  // ({ id, title, time, notes: [{ type, step, accidental }] }) under its own key; those are moved over on load.
+  const STORAGE_KEY = 'ltw.scores.v2';
+  const V1_KEY = 'ltw.scores.v1';
+  const MAX_MEASURES = 12; // the editor's limit until it grows (expansion 7); stored scores have none
   const MAX_TITLE = 30;
-  const TOP_STEP = 11; // G5
-  const TIMES = [2, 3, 4];
+  const V1_TOP_STEP = 11; // G5
+  const V1_TIMES = [2, 3, 4];
 
   const NOTICES = {
     unavailable: '저장할 수 없는 환경이에요. 이번 방문 동안만 남아요.',
     unreadable: '저장된 악보를 읽지 못했어요.',
     dropped: (count) => `읽지 못한 악보 ${count}개를 뺐어요.`,
+    notMoved: (count) => `예전 악보 ${count}개를 옮기지 못했어요.`,
     saveFailed: '저장하지 못했어요. 이번 방문 동안만 남아요.',
   };
 
-  // "도도솔솔 라라솔 ..." with a length per note -> notes. Every note here is natural (C major).
-  function phrase(steps, types) {
-    return steps.map((step, i) => ({ type: types[i], step, accidental: 0 }));
-  }
-
-  // Twinkle, Twinkle, Little Star (public domain), 4/4, 12 measures: A A' B B A A'.
-  // Each line is two measures, "x x y y | z z w(half)".
-  function example() {
-    const line = (x, y, z, w) => phrase([x, x, y, y, z, z, w], ['q', 'q', 'q', 'q', 'q', 'q', 'h']);
-    const a = [...line(0, 4, 5, 4), ...line(3, 2, 1, 0)];
-    const b = line(4, 3, 2, 1);
-    return { id: 'example-twinkle', title: '반짝반짝 작은 별', time: 4, notes: [...a, ...b, ...b, ...a] };
+  function examples() {
+    return window.EXAMPLE_SCORES.map(Notation.clean);
   }
 
   function cleanTitle(title) {
     return typeof title === 'string' ? title.trim().slice(0, MAX_TITLE) : '';
   }
 
-  // A stored score is used only if every note is one the editor could have written: a known length,
-  // a pitch in C4~G5 with a single accidental, no note across a barline, and whole measures, at most twelve.
-  function isValid(score) {
+  // A v1 score is moved over only if the expansion 4 editor could have written it: a known length, a pitch in
+  // C4~G5 with a single accidental, no note across a barline, and whole measures, at most twelve.
+  function isV1Valid(score) {
     if (!score || typeof score !== 'object') return false;
     if (typeof score.id !== 'string' || !score.id) return false;
     if (!cleanTitle(score.title) || score.title.length > MAX_TITLE) return false;
-    if (!TIMES.includes(score.time) || !Array.isArray(score.notes) || !score.notes.length) return false;
+    if (!V1_TIMES.includes(score.time) || !Array.isArray(score.notes) || !score.notes.length) return false;
     const measure = score.time * 2;
     let filled = 0;
     for (const note of score.notes) {
       const type = note && Rhythm.TYPES[note.type];
       if (!type || typeof note.type !== 'string') return false;
       if (!type.rest) {
-        if (!Number.isInteger(note.step) || note.step < 0 || note.step > TOP_STEP) return false;
+        if (!Number.isInteger(note.step) || note.step < 0 || note.step > V1_TOP_STEP) return false;
         if (![-1, 0, 1].includes(note.accidental)) return false;
       }
       const left = measure - (filled % measure);
@@ -55,17 +47,8 @@
     return filled % measure === 0 && filled / measure <= MAX_MEASURES;
   }
 
-  // Only the fields a score has, so nothing extra is written back.
-  function copy(score) {
-    return {
-      id: score.id,
-      title: cleanTitle(score.title),
-      time: score.time,
-      notes: score.notes.map((note) => (Rhythm.TYPES[note.type].rest
-        ? { type: note.type }
-        : { type: note.type, step: note.step, accidental: note.accidental })),
-    };
-  }
+  const isValid = Notation.isValid;
+  const copy = (score) => Notation.clean(score);
 
   // localStorage can be missing or throw on access (privacy settings, a sandboxed page).
   function defaultStorage() {
@@ -95,9 +78,51 @@
       }
     }
 
+    // Reads and parses a key: null when it isn't there, undefined when it can't be read as a list.
+    function readList(key) {
+      let value = null;
+      try {
+        value = storage.getItem(key);
+      } catch {
+        return undefined;
+      }
+      if (value === null) return null;
+      try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed : undefined;
+      } catch {
+        return undefined;
+      }
+    }
+
+    // Valid, unique scores from a list; the rest are counted for the notice.
+    function keep(list, valid, convert) {
+      const ids = new Set();
+      const kept = list.filter((score) => {
+        if (!valid(score) || ids.has(score.id)) return false;
+        ids.add(score.id);
+        return true;
+      }).map(convert);
+      return { kept, dropped: list.length - kept.length };
+    }
+
     if (raw === null) {
-      // First visit (no list yet): start with the example. An empty list means the user deleted it.
-      scores = [example()];
+      const v1 = storage ? readList(V1_KEY) : null;
+      if (v1 === null) {
+        // First visit (no list yet): start with the examples. An empty list means the user deleted them.
+        scores = examples();
+      } else if (v1 === undefined) {
+        scores = examples();
+        notice = NOTICES.unreadable;
+      } else {
+        // Expansion 4's scores move over, and the examples it didn't have are added once (this list is then
+        // saved as v2 on the next write; v1 is left as it was).
+        const { kept, dropped } = keep(v1, isV1Valid, (score) => copy(Notation.fromLegacy({ ...score, title: cleanTitle(score.title) })));
+        const ids = new Set(kept.map((score) => score.id));
+        const added = examples().filter((score) => score.id !== 'example-twinkle' && !ids.has(score.id));
+        scores = [...kept, ...added];
+        if (dropped) notice = NOTICES.notMoved(dropped);
+      }
     } else {
       let parsed = null;
       try {
@@ -108,13 +133,9 @@
       if (!Array.isArray(parsed)) {
         notice = NOTICES.unreadable;
       } else {
-        const ids = new Set();
-        scores = parsed.filter((score) => {
-          if (!isValid(score) || ids.has(score.id)) return false;
-          ids.add(score.id);
-          return true;
-        }).map(copy);
-        if (scores.length < parsed.length) notice = NOTICES.dropped(parsed.length - scores.length);
+        const { kept, dropped } = keep(parsed, isValid, copy);
+        scores = kept;
+        if (dropped) notice = NOTICES.dropped(dropped);
       }
     }
 
@@ -140,8 +161,10 @@
       // Adds a new score (no id) or replaces the one with the same id. Returns { id, stored } or null if invalid.
       // stored: false when it is kept only in memory.
       save(score) {
-        const next = copy({ ...score, id: score.id || newId() });
-        if (!isValid(next)) return null;
+        if (!score || typeof score !== 'object') return null;
+        const candidate = { ...score, id: score.id || newId() };
+        if (!isValid(candidate)) return null;
+        const next = copy(candidate);
         const index = scores.findIndex((item) => item.id === next.id);
         if (index === -1) scores.push(next);
         else scores[index] = next;
@@ -160,5 +183,5 @@
     return `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
   }
 
-  window.Scores = { open, isValid, example, STORAGE_KEY, MAX_MEASURES, MAX_TITLE };
+  window.Scores = { open, isValid, isV1Valid, examples, STORAGE_KEY, V1_KEY, MAX_MEASURES, MAX_TITLE };
 })();

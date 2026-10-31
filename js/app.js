@@ -48,6 +48,8 @@ const MODES = {
       input: '들은 음을 오선에 순서대로 찍어 보세요. 리듬은 적지 않아요.',
       empty: "저장된 악보가 없어요. '새 악보'로 만들어 보세요.",
       noNotes: "이 악보에는 음이 없어요. '편집'에서 음을 넣어 보세요.",
+      // Until the score view draws the v2 notation (TODO 29), scores beyond the expansion 4 range wait.
+      pending: '이 악보는 곧 그려져요. 지금은 다른 악보로 연습해 주세요.',
     },
   },
 };
@@ -116,8 +118,16 @@ let unlockTimer = null;
 const scores = Scores.open();
 let scoreId = scores.list()[0]?.id ?? null;
 
+// Why the chosen score can't go to the editor yet (null if it can): notation the expansion 4 editor doesn't write.
+function scoreEditProblem() {
+  const score = scoreId && scores.get(scoreId);
+  return score ? Notation.legacyProblem(score) : null;
+}
+
+// The storage notice comes first; otherwise why 편집 is off for this score.
 function renderScoreNotice() {
-  const notice = mode === 'score' ? scores.notice() : null;
+  const problem = scoreEditProblem();
+  const notice = mode === 'score' ? scores.notice() ?? (problem && `편집기 밖 표기(${problem})가 있어 편집할 수 없어요`) : null;
   $('score-notice').hidden = !notice;
   $('score-notice').textContent = notice ?? '';
 }
@@ -136,7 +146,7 @@ function renderScorePicker() {
   const editing = editingId !== undefined;
   select.disabled = !list.length || editing;
   $('btn-new-score').disabled = editing;
-  $('btn-edit-score').disabled = !scoreId || editing;
+  updateEditButton();
   for (const chip of $('section-chips').children) chip.disabled = editing;
 }
 
@@ -173,7 +183,7 @@ function openEditor(id) {
   $('editor-delete').hidden = !id;
   $('editor').hidden = false;
   $('app').dataset.editing = '';
-  editor.open(id ? scores.get(id) : null);
+  editor.open(id ? Notation.toLegacy(scores.get(id)) : null);
   renderScorePicker();
 }
 
@@ -199,13 +209,47 @@ function resetDelete() {
 }
 
 $('btn-new-score').addEventListener('click', () => openEditor(null));
+// A score the editor can't take yet (TODO 27-5) can still be deleted: 편집 turns into 삭제, confirmed by a second press
+// like the editor's.
+// The picker row is narrow on phones, so its confirm label is short; the screen-reader name says the whole thing.
+const PICKER_DELETE_CONFIRM = '정말 삭제';
+let pickerDeleteTimer = null;
+
+function updateEditButton() {
+  const button = $('btn-edit-score');
+  const problem = scoreEditProblem();
+  clearTimeout(pickerDeleteTimer);
+  button.classList.remove('is-confirm');
+  button.removeAttribute('aria-label');
+  button.dataset.action = problem ? 'delete' : 'edit';
+  button.textContent = problem ? DELETE_LABEL : '편집';
+  button.classList.toggle('btn-danger', Boolean(problem));
+  button.disabled = !scoreId || editingId !== undefined;
+}
+
 $('btn-edit-score').addEventListener('click', () => {
-  if (scoreId) openEditor(scoreId);
+  const button = $('btn-edit-score');
+  if (!scoreId) return;
+  if (button.dataset.action !== 'delete') {
+    openEditor(scoreId);
+    return;
+  }
+  if (!button.classList.contains('is-confirm')) {
+    button.classList.add('is-confirm');
+    button.textContent = PICKER_DELETE_CONFIRM;
+    button.setAttribute('aria-label', DELETE_CONFIRM);
+    pickerDeleteTimer = setTimeout(updateEditButton, DELETE_WAIT);
+    return;
+  }
+  scores.remove(scoreId);
+  scoreId = scores.list()[0]?.id ?? null;
+  sectionIndex = 0;
+  backToPractice();
 });
 $('editor-cancel').addEventListener('click', backToPractice);
 $('editor-save').addEventListener('click', () => {
   if (!editor.canSave()) return;
-  const saved = scores.save({ ...editor.getScore(), id: editingId ?? undefined });
+  const saved = scores.save(Notation.fromLegacy({ ...editor.getScore(), id: editingId ?? undefined }));
   if (!saved) return;
   scoreId = saved.id;
   sectionIndex = 0;
@@ -235,8 +279,9 @@ $('editor').addEventListener('click', (event) => {
 let sectionIndex = 0;
 let section = null; // { start, end, notes (with rests), label, time }
 
+// The practice screen still works on the expansion 4 (v1) shape; v2 scores within that range are converted.
 function scoreSections() {
-  const score = scoreId && scores.get(scoreId);
+  const score = Notation.toLegacy(scoreId && scores.get(scoreId));
   return score ? Score.sections(score).map((item) => ({ ...item, time: score.time })) : [];
 }
 
@@ -332,12 +377,15 @@ function newQuestion() {
       .map(({ step, accidental }) => ({ step, accidental })) : null;
     staff.reset(current ? current.length : 0, { topStep: HARMONY_TOP_STEP });
     renderSectionChips(list);
+    renderScoreNotice();
+    updateEditButton();
   } else {
     current = pick(PATTERNS[level], current);
     staff.reset(current.length);
   }
   $('btn-question').disabled = !current;
-  setHint(current ? 'ready' : scoreId ? 'noNotes' : 'empty');
+  const waiting = mode === 'score' && scoreId && scoreEditProblem();
+  setHint(current ? 'ready' : waiting ? 'pending' : scoreId ? 'noNotes' : 'empty');
 }
 
 function element(tag, className, text) {
