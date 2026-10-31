@@ -263,3 +263,9 @@ TODO는 약 700줄이 됐다. 단계마다 보고·확인·커밋을 기다려�
 반대로 AI가 대신할 수 없는 부분도 분명했다. 소리를 듣는 일, 실제 기기에서 써 보는 일, 그리고 **무엇을 만들지 정하는 일**은 끝까지 사람의 몫이었다. 바이브 코딩에서도 사람의 역할은 코드를 쓰는 사람에서 **방향을 정하고 결과를 확인하는 사람**으로 바뀔 뿐, 사라지지 않는다는 것을 확인했다.
 
 다음 단계로는 MusicXML 불러오기(확장 5)를 통해, 직접 입력하지 않아도 가진 악보로 바로 연습할 수 있게 하는 것을 생각하고 있다.
+
+---
+
+## 녹음 출처
+
+확장 8의 악기 소리는 공개 녹음을 다듬어 쓴다. 피아노: **Salamander Grand Piano V3** (Alexander Holm, [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)). 바이올린·플루트·마림바·하프: **VSCO 2 Community Edition** (Versilian Studios, CC0). 자세한 내용과 바꾼 점은 [docs/CREDITS.md](docs/CREDITS.md).
