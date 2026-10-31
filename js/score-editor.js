@@ -86,7 +86,8 @@
   // elements: { title, view, status, undo, redo, tabs, tools: { notes, measure, signs } }. onChange: after any change.
   function create({ title, view, status, undo, redo, tabs, tools, onChange = () => {} }) {
     let state = null;
-    const input = { type: 'quarter', dots: 0, toggle: null }; // the length to write, the ♯/♭/♮ toggle
+    // The length to write, the ♯/♭/♮ toggle, and what a pitch does: write a note, add to the chord or a grace note.
+    const input = { type: 'quarter', dots: 0, toggle: null, mode: 'note' };
 
     // ---- the [음표] panel ----
     const lengthRow = document.createElement('div');
@@ -157,7 +158,23 @@
     const pad = document.createElement('div');
     pad.className = 'ed-pad';
     pad.id = 'editor-pad';
-    tools.notes.append(lengthRow, actionRow, tupletRow, pitchRow, pad);
+    // Chords and grace notes: while one is on, a pitch adds to the cursor's chord or goes in as a grace note.
+    const chordButton = button('화음 넣기', { id: 'editor-chord', 'aria-pressed': 'false' });
+    const graceButton = button('꾸밈음 넣기', { id: 'editor-grace', 'aria-pressed': 'false' });
+    const slashButton = button('사선', { id: 'editor-slash', 'aria-pressed': 'false', 'aria-label': '꾸밈음 사선' });
+    const modeRow = document.createElement('div');
+    modeRow.className = 'ed-row';
+    modeRow.append(chordButton, graceButton, slashButton);
+    chordButton.addEventListener('click', () => {
+      input.mode = input.mode === 'chord' ? 'note' : 'chord';
+      renderTools();
+    });
+    graceButton.addEventListener('click', () => {
+      input.mode = input.mode === 'grace' ? 'note' : 'grace';
+      renderTools();
+    });
+    slashButton.addEventListener('click', () => state.toggleSlash() && render());
+    tools.notes.append(lengthRow, actionRow, modeRow, tupletRow, pitchRow, pad);
 
     // A message in the status line until the next change (why nothing happened).
     function flash(message) {
@@ -315,6 +332,25 @@
       return true;
     }
 
+    // A pitch from the input staff or a letter key, by the mode: a note at the cursor, a pitch more in its chord, or a
+    // grace note before it (of the chosen length: an eighth or shorter).
+    function enterPitch(pitch, mode = input.mode) {
+      if (mode === 'chord') {
+        if (!state.toggleChordPitch(pitch)) {
+          flash('화음의 마지막 음은 [지우기]로 지워요.');
+          return;
+        }
+      } else if (mode === 'grace') {
+        const type = ['whole', 'half', 'quarter'].includes(input.type) ? 'eighth' : input.type;
+        if (!state.addGrace(pitch, type)) return;
+      } else {
+        write({ type: input.type, dots: input.dots, pitch });
+        return;
+      }
+      if (typeof Sound !== 'undefined') Sound.playEvents([{ start: 0, length: 0.35, midi: N.midi(pitch), peak: Playback.NOTE_PEAK, sustain: false }]);
+      render();
+    }
+
     // A pitch of this letter and octave at the cursor: the toggle's accidental, else as the page shows it.
     function pitchFor(step, octave) {
       const { measure, note } = state.cursor;
@@ -347,9 +383,7 @@
           x: 0, y: yOf(pos) - PAD.half / 2, width: PAD.width, height: PAD.half, class: 'ed-slot',
           'data-pos': pos, 'data-step': step, 'data-octave': octave,
         });
-        slot.addEventListener('click', () => {
-          write({ type: input.type, dots: input.dots, pitch: pitchFor(step, octave) });
-        });
+        slot.addEventListener('click', () => enterPitch(pitchFor(step, octave)));
         svg.append(slot);
       }
       pad.replaceChildren(svg);
@@ -370,11 +404,26 @@
       for (const b of tupletButtons) b.disabled = Boolean(target.grace || target.tuplet2);
       customButton.disabled = Boolean(target.grace || target.tuplet2);
       untupletButton.disabled = !target.tuplet;
+      chordButton.setAttribute('aria-pressed', String(input.mode === 'chord'));
+      graceButton.setAttribute('aria-pressed', String(input.mode === 'grace'));
+      slashButton.setAttribute('aria-pressed', String(Boolean(target.slash)));
+      slashButton.disabled = !target.grace;
       renderMeasureTools();
       const fitsNow = state.fits(input.type, input.dots);
       restButton.disabled = !fitsNow;
-      pad.classList.toggle('is-disabled', !fitsNow);
+      pad.classList.toggle('is-disabled', !fitsNow && input.mode === 'note'); // a chord or grace note takes no room
       renderPad();
+    }
+
+    // For Shift+letter: the letter's pitch just above the cursor note's chosen pitch (MuseScore adds chord notes upward).
+    function nearestAbove(step) {
+      const note = state.score.measures[state.cursor.measure].notes[state.cursor.note];
+      if (note.rest) return nearest(step);
+      const base = N.pitchesOf(note)[state.cursor.head]?.pitch ?? note.pitch;
+      const index = STEPS.indexOf(step);
+      let d = diatonic(base) + 1;
+      while (((d % 7) + 7) % 7 !== index) d++;
+      return pitchFor(step, Math.floor(d / 7));
     }
 
     // The letter's pitch nearest the last pitch before the cursor (or the middle of the staff).
@@ -475,7 +524,9 @@
       const plain = !ctrl && !event.altKey;
       const letter = event.key.length === 1 ? event.key.toUpperCase() : '';
       if (plain && !event.shiftKey && STEPS.includes(letter)) {
-        write({ type: input.type, dots: input.dots, pitch: nearest(letter) });
+        enterPitch(nearest(letter));
+      } else if (plain && event.shiftKey && STEPS.includes(letter)) {
+        enterPitch(nearestAbove(letter), 'chord');
       } else if (plain && KEY_LENGTHS[event.key]) {
         chooseLength(KEY_LENGTHS[event.key]);
       } else if (!ctrl && event.altKey && ['3', '5', '6', '7'].includes(event.key)) {

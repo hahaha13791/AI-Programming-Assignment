@@ -288,6 +288,18 @@
   const sound = (score) => N.isValid({ ...score, id: 'x', title: 'x', measures: [...score.measures, STAND_IN] });
   const resolved = (score) => N.resolve({ ...score, id: 'x', title: 'x' });
 
+  // Takes pitch `index` (0: the written one) out of a chord; the next one up becomes the written pitch.
+  function removePitch(note, index) {
+    const entries = [{ pitch: note.pitch, tie: note.tie }, ...(note.chord ?? [])];
+    entries.splice(index, 1);
+    note.pitch = entries[0].pitch;
+    if (entries[0].tie) note.tie = entries[0].tie;
+    else delete note.tie;
+    const rest = entries.slice(1).map(({ pitch, tie }) => (tie ? { pitch, tie } : { pitch }));
+    if (rest.length) note.chord = rest;
+    else delete note.chord;
+  }
+
   // Ties kept only where both ends are still there, the same pitch in neighbouring notes (after any change).
   function fixTies(score) {
     const notes = score.measures.flatMap((m) => m.notes);
@@ -483,12 +495,75 @@
           return true;
         }
         if (target.rest) return false;
+        // In a chord, only the chosen pitch goes.
+        if (target.chord?.length) {
+          removePitch(target, c.head);
+          c.head = 0;
+          fixTies(draft);
+          return true;
+        }
         const rest = { type: target.type, dots: target.dots ?? 0, rest: true };
         for (const key of ['tuplet', 'tuplet2', 'tupletStart', 'tupletStop', 'tuplet2Start', 'tuplet2Stop', 'clef', 'tempo']) {
           if (target[key] !== undefined) rest[key] = target[key];
         }
         notes[c.note] = rest;
         fixTies(draft);
+        return true;
+      });
+    }
+
+    // ---- chords and grace notes (PRD #4-H-3) ----
+
+    // Adds a pitch to the cursor note's chord, or takes it out if the chord has it (a rest becomes that note). The
+    // cursor goes to the pitch added.
+    function toggleChordPitch(pitch) {
+      return change((draft, c) => {
+        const note = noteAt(draft, c);
+        if (note.rest) {
+          delete note.rest;
+          note.pitch = { ...pitch };
+          c.head = 0;
+          fixTies(draft);
+          return true;
+        }
+        const pitches = N.pitchesOf(note);
+        const at = pitches.findIndex((p) => N.midi(p.pitch) === N.midi(pitch));
+        if (at >= 0) {
+          if (pitches.length < 2) return false; // the last pitch goes with [지우기]
+          removePitch(note, at);
+          c.head = 0;
+        } else {
+          note.chord = [...(note.chord ?? []), { pitch: { ...pitch } }];
+          c.head = note.chord.length;
+        }
+        fixTies(draft);
+        return true;
+      });
+    }
+
+    // A grace note of `type` (with a slash or not) just before the cursor note; the cursor stays on that note, so the
+    // next one goes after it (grace notes in the order written).
+    function addGrace(pitch, type = 'eighth', slash = false) {
+      return change((draft, c) => {
+        const notes = draft.measures[c.measure].notes;
+        const grace = { type, dots: 0, pitch: { ...pitch }, grace: true };
+        if (slash) grace.slash = true;
+        const target = notes[c.note];
+        // Before a main note: after the grace notes already there. On a grace note: before it.
+        notes.splice(c.note, 0, grace);
+        if (!target.grace) c.note += 1;
+        fixTies(draft);
+        return sound(draft);
+      });
+    }
+
+    // The slash on the cursor grace note, on or off.
+    function toggleSlash() {
+      return change((draft, c) => {
+        const note = noteAt(draft, c);
+        if (!note.grace) return false;
+        if (note.slash) delete note.slash;
+        else note.slash = true;
         return true;
       });
     }
@@ -791,6 +866,7 @@
       move, moveMeasure, select, result, canSave,
       fits, insert, setLength, erase, semitone, octave, toggleTie, isTied, tuplet, untuplet,
       setTime, setKey, setClef, setTempo, setPickup, setMeasureLength, insertMeasure, deleteMeasure, setFirstNumber,
+      toggleChordPitch, addGrace, toggleSlash,
       alterAt: (measure, at, step, oct) => alterAt(doc, measure, at, step, oct),
       clefAt: (measure = cursor.measure, at = cursor.note) => clefAt(doc, measure, at),
     };
