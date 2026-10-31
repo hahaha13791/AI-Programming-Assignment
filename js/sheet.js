@@ -25,6 +25,13 @@
   const BEAM = 4.5; // beam thickness
   const BEAM_GAP = 7; // from one beam to the next
   const MIN = { head: 14, whole: 18, rest: 12, accidental: 12, dot: 7, flag: 8, gap: 3 };
+  // Repeat signs: room for a repeat barline (thick, thin, dots), the bands above the staff for marks (segno, coda,
+  // D.C. …) and for ending brackets, in steps, and the bracket's hook.
+  const REPEAT_W = 12;
+  const MARK_BAND = 3;
+  const ENDING_BAND = 3;
+  const ENDING_HOOK = 14;
+  const MARK_CHAR = 6.5; // about the width of a mark's letter
   // Wide boxes take four measures to a row, narrow ones two; drawn in these viewBox widths.
   const WIDE_MIN = 560;
   const WIDTH = { wide: 720, narrow: 360 };
@@ -284,8 +291,15 @@
       item.parts = { left, head, right };
       item.min = left + head + right + MIN.gap;
     }
-    const min = MEASURE_PAD_LEFT + MEASURE_PAD_RIGHT + notes.reduce((sum, n) => sum + n.min, 0);
-    return { ...measure, index, changes, notes, beams, graceBeams, tuplets: tupletGroups(measure.notes), min, prevKey: prev?.key };
+    const leftExtra = measure.repeatStart ? REPEAT_W : 0;
+    const rightExtra = measure.repeatEnd ? REPEAT_W : measure.barline ? 4 : 0;
+    let min = MEASURE_PAD_LEFT + MEASURE_PAD_RIGHT + leftExtra + rightExtra + notes.reduce((sum, n) => sum + n.min, 0);
+    // Marks are written above the measure and kept within it.
+    if (measure.marks) min = Math.max(min, 6 + measure.marks.reduce((sum, mark) => sum + markWidth(mark), 0));
+    return {
+      ...measure, index, changes, notes, beams, graceBeams, tuplets: tupletGroups(measure.notes), min, prevKey: prev?.key,
+      leftExtra, rightExtra,
+    };
   }
 
   // Width of what goes before a measure's notes: a mid-row clef, key and time change.
@@ -358,7 +372,117 @@
     const nested = row.some((info) => info.tuplets.some((t) => t[2] === 2));
     const tied = (n) => n.heads.some((h) => h.tie);
     const extra = (row.some((info) => info.tuplets.length || info.notes.some(tied)) ? 2 : 0) + (nested ? 2 : 0);
-    return { up: up + extra, down: down - extra };
+    // Above them, a band for marks and one for ending brackets, when the row has any.
+    const marks = row.some((info) => info.marks);
+    const endings = row.some((info) => info.ending);
+    const noteUp = up + extra;
+    return { up: noteUp + (marks ? MARK_BAND : 0) + (endings ? ENDING_BAND : 0), down: down - extra, noteUp };
+  }
+
+  // ---- repeat signs ----
+  function markWidth(mark) {
+    return mark.kind === 'text' ? mark.text.length * MARK_CHAR + 4 : 18;
+  }
+
+  // Barlines of measure k: a repeat start at its beginning (after any clef, key or time change: x0), and at its end
+  // (x) a repeat end, a final or double barline or a plain one. A plain barline before a repeat start is left out,
+  // and back-to-back repeats share the thick line.
+  function drawBarlines(svg, row, k, xStart, x0, x, final, yOf) {
+    const info = row[k];
+    const top = yOf(TOP_LINE);
+    const bottom = yOf(0);
+    const group = (side) => {
+      const g = svgEl('g', { class: 'sv-barline', 'data-measure': info.index, 'data-side': side });
+      svg.append(g);
+      return g;
+    };
+    const thin = (g, at) => g.append(svgEl('line', { x1: at, x2: at, y1: top, y2: bottom, class: 'sv-bar' }));
+    const thick = (g, at) => g.append(svgEl('rect', { x: at - 1.5, y: top, width: 3, height: bottom - top, class: 'sv-bar-end' }));
+    const dots = (g, at) => {
+      for (const pos of [3, 5]) g.append(svgEl('circle', { cx: at, cy: yOf(pos), r: 1.9, class: 'sv-fill sv-repeat-dot' }));
+    };
+    if (info.repeatStart) {
+      const g = group('start');
+      g.dataset.kind = 'repeat';
+      const shared = k > 0 && x0 === xStart && row[k - 1].repeatEnd;
+      if (!shared) thick(g, x0 + 1.5);
+      thin(g, x0 + (shared ? 2 : 5.5));
+      dots(g, x0 + (shared ? 6 : 9.5));
+    }
+    const next = row[k + 1];
+    const nextOpens = next && next.repeatStart && prefixWidth(next, false) === 0;
+    const g = group('end');
+    if (info.repeatEnd) {
+      g.dataset.kind = 'repeat';
+      dots(g, x - 9.5);
+      thin(g, x - 5.5);
+      thick(g, x - 1.5);
+    } else if (final || info.barline === 'final') {
+      g.dataset.kind = 'final';
+      thin(g, x - 4);
+      thick(g, x - 1);
+    } else if (info.barline === 'double') {
+      g.dataset.kind = 'double';
+      thin(g, x - 3.5);
+      thin(g, x);
+    } else if (!nextOpens) {
+      g.dataset.kind = 'plain';
+      thin(g, x);
+    }
+  }
+
+  // An ending bracket over the measure (left..right), with its hook and text on its first measure and a closing hook
+  // on its last. One running on to the next row starts again there with no hook.
+  function drawEnding(svg, info, left, right, y) {
+    const { text, start, end } = info.ending;
+    const x1 = left + (start ? 3 : 0);
+    const x2 = right - (end === 'stop' ? 4 : 0);
+    let d = start ? `M${x1} ${y + ENDING_HOOK} L${x1} ${y}` : `M${x1} ${y}`;
+    d += ` L${x2} ${y}`;
+    if (end === 'stop') d += ` L${x2} ${y + ENDING_HOOK}`;
+    const g = svgEl('g', { class: 'sv-ending', 'data-measure': info.index, 'data-text': text });
+    g.append(svgEl('path', { d, class: 'sv-ending-line' }));
+    if (start) g.append(svgEl('text', { x: x1 + 4, y: y + 12, class: 'sv-ending-text' }, text));
+    svg.append(g);
+  }
+
+  // Segno, coda and words above the measure: those at its start from the left, those at its end from the right.
+  function drawMarks(svg, info, left, right, base) {
+    const g = svgEl('g', { class: 'sv-marks', 'data-measure': info.index });
+    let sx = left + 3;
+    for (const mark of info.marks.filter((m) => m.at === 'start')) {
+      drawMark(g, mark, sx, base, 'start');
+      sx += markWidth(mark);
+    }
+    let ex = right - 3;
+    for (const mark of info.marks.filter((m) => m.at === 'end').reverse()) {
+      drawMark(g, mark, ex, base, 'end');
+      ex -= markWidth(mark);
+    }
+    svg.append(g);
+  }
+
+  function drawMark(g, mark, x, base, side) {
+    if (mark.kind === 'text') {
+      g.append(svgEl('text', { x, y: base, class: 'sv-mark-text', 'text-anchor': side, 'data-kind': 'text' }, mark.text));
+      return;
+    }
+    const cx = side === 'end' ? x - 8 : x + 8;
+    const cy = base - 6;
+    const sign = svgEl('g', { class: `sv-sign sv-${mark.kind}`, 'data-kind': mark.kind });
+    if (mark.kind === 'coda') {
+      sign.append(svgEl('ellipse', { cx, cy, rx: 4.5, ry: 5.5, class: 'sv-sign-line' }));
+      sign.append(svgEl('path', { d: `M${cx - 8} ${cy} L${cx + 8} ${cy} M${cx} ${cy - 8} L${cx} ${cy + 8}`, class: 'sv-sign-line' }));
+    } else {
+      sign.append(svgEl('path', {
+        d: `M${cx + 3.5} ${cy - 4.5} C${cx + 2} ${cy - 8} ${cx - 5} ${cy - 7} ${cx - 3.5} ${cy - 2.5} `
+          + `C${cx - 2.5} ${cy} ${cx + 3.5} ${cy} ${cx + 3.5} ${cy + 3} C${cx + 4.5} ${cy + 7} ${cx - 2} ${cy + 8} ${cx - 3.5} ${cy + 4.5}`,
+        class: 'sv-sign-line',
+      }));
+      sign.append(svgEl('path', { d: `M${cx - 6} ${cy + 7} L${cx + 6} ${cy - 7}`, class: 'sv-sign-line' }));
+      for (const [dx, dy] of [[-5, 2], [5, -2]]) sign.append(svgEl('circle', { cx: cx + dx, cy: cy + dy, r: 1.3, class: 'sv-fill' }));
+    }
+    g.append(sign);
   }
 
   function drawSigns(parent, signs, x, yOf) {
@@ -658,7 +782,7 @@
   }
 
   function drawRow(row, r, width, last, short, options) {
-    const { up, down } = rowExtent(row);
+    const { up, down, noteUp } = rowExtent(row);
     const height = ROW_PAD_TOP + (up - down) * HALF + ROW_PAD_BOTTOM;
     const yOf = (pos) => ROW_PAD_TOP + (up - pos) * HALF;
     const svg = svgEl('svg', { class: 'sheet-svg', viewBox: `0 0 ${width} ${height}`, 'data-row': r });
@@ -699,9 +823,10 @@
 
       group.dataset.x0 = x;
       group.dataset.x1 = x + widths[k];
-      const sizes = distribute(widths[k] - MEASURE_PAD_LEFT - MEASURE_PAD_RIGHT, info.notes.map((n) => n.min),
-        info.notes.map((n) => N.toNumber(N.duration(n.note))));
-      let nx = x + MEASURE_PAD_LEFT;
+      const x0 = x;
+      const sizes = distribute(widths[k] - MEASURE_PAD_LEFT - MEASURE_PAD_RIGHT - info.leftExtra - info.rightExtra,
+        info.notes.map((n) => n.min), info.notes.map((n) => N.toNumber(N.duration(n.note))));
+      let nx = x + MEASURE_PAD_LEFT + info.leftExtra;
       const drawn = info.notes.map((item, i) => {
         if (item.clefChange) drawClef(group, item.clefChange, nx + 1, yOf, true);
         const result = drawNote(group, item, nx + item.parts.left + item.parts.head / 2, yOf);
@@ -727,9 +852,11 @@
       if (options.hit) {
         group.append(svgEl('rect', { x: xStart, y: 0, width: x - xStart, height, class: 'sv-hit', 'data-measure': info.index }));
       }
-      const final = last && k === row.length - 1;
-      svg.append(svgEl('line', { x1: x - (final ? 4 : 0), x2: x - (final ? 4 : 0), y1: yOf(TOP_LINE), y2: yOf(0), class: 'sv-bar' }));
-      if (final) svg.append(svgEl('rect', { x: x - 2.5, y: yOf(TOP_LINE), width: 3, height: yOf(0) - yOf(TOP_LINE), class: 'sv-bar-end' }));
+      drawBarlines(svg, row, k, xStart, x0, x, last && k === row.length - 1, yOf);
+      // A bracket or marks at a row start begin after the clef and key.
+      const left = k === 0 ? x0 : xStart;
+      if (info.ending) drawEnding(svg, info, left, x, ROW_PAD_TOP + 4);
+      if (info.marks) drawMarks(svg, info, left, x, yOf(noteUp) - 6);
     });
 
     const ties = svgEl('g', { class: 'sv-ties' });

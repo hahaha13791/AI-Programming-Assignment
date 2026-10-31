@@ -759,6 +759,33 @@ button:focus-visible {
   fill: var(--accent-soft);
 }
 
+/* Repeat signs (sheet.js): ending brackets, segno and coda, D.C./D.S./Fine words. */
+.sv-ending-line,
+.sv-sign-line {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 1.4;
+}
+
+.sv-sign-line {
+  stroke-width: 1.6;
+}
+
+.sv-ending-text {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 12px;
+  font-weight: 700;
+  fill: var(--text);
+}
+
+.sv-mark-text {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 12px;
+  font-style: italic;
+  font-weight: 700;
+  fill: var(--text);
+}
+
 .sv-time {
   font-family: Georgia, "Times New Roman", serif;
   font-size: 30px;

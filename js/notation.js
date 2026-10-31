@@ -8,7 +8,12 @@
   //             time: [beats, beatType], key: { fifths: -7..7, mode: 'major'|'minor' }, clef (CLEFS),
   //             tempo: quarter notes per minute;
   //             optional: timeSymbol: 'common'|'cut' (C or ¢ drawn for that time), implicit: true (not counted in the
-  //             numbering, like the second half of a measure split by a repeat) }
+  //             numbering, like the second half of a measure split by a repeat);
+  //             repeat signs, as written (playing follows the written order, not the repeats):
+  //             repeatStart / repeatEnd: true (a repeat barline at its start / end), barline: 'double'|'final' (its end
+  //             barline, when not a repeat), ending: { text: '1.', start: true on its first measure, end: 'stop'
+  //             (closed, with a hook) | 'open' on its last } on every measure under a 1st/2nd ending bracket,
+  //             marks: [{ kind: 'segno'|'coda'|'text', text (for 'text': D.C. al Fine, To Coda …), at: 'start'|'end' }] }
   //             A measure may be shorter than its time (a pickup, a split measure, the last one), never longer.
   // note    = { type: 'whole'|'half'|'quarter'|'eighth'|'16th'|'32nd'|'64th', dots: 0..2,
   //             pitch: { step: 'C'..'B', alter: -2..2, octave }  — or rest: true. Pitches are as they sound: an octave
@@ -27,6 +32,9 @@
   const SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   const CLEFS = ['treble', 'bass', 'alto', 'tenor', 'treble-8vb', 'treble-8va', 'bass-8vb', 'bass-8va'];
   const TIME_SYMBOLS = ['common', 'cut'];
+  const BARLINES = ['double', 'final'];
+  const MARK_KINDS = ['segno', 'coda', 'text'];
+  const MAX_MARK = 40;
   const MODES = ['major', 'minor'];
   const BEAT_TYPES = [1, 2, 4, 8, 16, 32];
   // Titles from imported files can be long (the editor still takes 30 characters, Scores.MAX_TITLE).
@@ -113,9 +121,28 @@
       attrs.endTempo = endTempo;
       const counted = !(measure.implicit && i > 0);
       if (counted) number = next++;
-      return { ...attrs, notes: measure.notes, number, numbered: counted, implicit: Boolean(measure.implicit) };
+      return { ...attrs, notes: measure.notes, number, numbered: counted, implicit: Boolean(measure.implicit), ...repeatsOf(measure) };
     });
   }
+
+  // A measure's repeat signs (only those it has).
+  function repeatsOf(measure) {
+    const out = {};
+    if (measure.repeatStart) out.repeatStart = true;
+    if (measure.repeatEnd) out.repeatEnd = true;
+    if (measure.barline) out.barline = measure.barline;
+    if (measure.ending) {
+      out.ending = { text: measure.ending.text };
+      if (measure.ending.start) out.ending.start = true;
+      if (measure.ending.end) out.ending.end = measure.ending.end;
+    }
+    if (measure.marks) {
+      out.marks = measure.marks.map((m) => (m.kind === 'text' ? { kind: m.kind, text: m.text, at: m.at } : { kind: m.kind, at: m.at }));
+    }
+    return out;
+  }
+
+  const hasRepeats = (measure) => Boolean(measure.repeatStart || measure.repeatEnd || measure.ending || measure.marks);
 
   // ---- validation ----
   const isInt = (value, min, max) => Number.isInteger(value) && value >= min && value <= max;
@@ -176,7 +203,36 @@
     if (has('tempo') && !validTempo(measure.tempo)) return false;
     if (has('timeSymbol') && !(has('time') && TIME_SYMBOLS.includes(measure.timeSymbol))) return false;
     if (has('implicit') && measure.implicit !== true) return false;
+    if (has('repeatStart') && measure.repeatStart !== true) return false;
+    if (has('repeatEnd') && measure.repeatEnd !== true) return false;
+    if (has('barline') && (!BARLINES.includes(measure.barline) || measure.repeatEnd)) return false;
+    if (has('ending')) {
+      const { text, start, end } = measure.ending ?? {};
+      if (typeof text !== 'string' || !text.trim() || text.length > MAX_MARK) return false;
+      if (start !== undefined && start !== true) return false;
+      if (end !== undefined && !['stop', 'open'].includes(end)) return false;
+    }
+    if (has('marks')) {
+      if (!Array.isArray(measure.marks) || !measure.marks.length) return false;
+      for (const mark of measure.marks) {
+        if (!mark || !MARK_KINDS.includes(mark.kind) || !['start', 'end'].includes(mark.at)) return false;
+        if (mark.kind === 'text' && (typeof mark.text !== 'string' || !mark.text.trim() || mark.text.length > MAX_MARK)) return false;
+      }
+    }
     return true;
+  }
+
+  // An ending bracket starts on its first measure, runs over the next measures with the same text and closes on its
+  // last (end), all of them in a row.
+  function validEndings(measures) {
+    let open = null;
+    for (const measure of measures) {
+      const ending = measure.ending;
+      if (open && !(ending && !ending.start && ending.text === open)) return false;
+      if (!open && ending && !ending.start) return false;
+      open = ending && !ending.end ? ending.text : null;
+    }
+    return open === null;
   }
 
   // A tuplet group runs from tupletStart to tupletStop inside one measure, every note in it with the same ratio.
@@ -236,6 +292,7 @@
       if (!measure || !Array.isArray(measure.notes) || !measure.notes.length) return false;
       if (!validAttrs(measure, i === 0) || !measure.notes.every(validNote) || !validTuplets(measure.notes)) return false;
     }
+    if (!validEndings(score.measures)) return false;
     const measures = resolve(score);
     for (let i = 0; i < measures.length; i++) {
       const diff = cmp(filled(measures[i].notes), measureLength(measures[i].time));
@@ -287,6 +344,7 @@
       if (m.clef) measure.clef = m.clef;
       if (m.tempo !== undefined) measure.tempo = m.tempo;
       if (m.implicit) measure.implicit = true;
+      Object.assign(measure, repeatsOf(m));
       measure.notes = m.notes.map(note);
       return measure;
     });
@@ -305,7 +363,7 @@
       pickup: score.pickup && start === 0,
       firstNumber: first.number,
       measures: score.measures.slice(start, end + 1).map((m, i) => (i === 0
-        ? { time: first.time, timeSymbol: first.timeSymbol, key: first.key, clef: first.clef, tempo: first.tempo, notes: m.notes }
+        ? { ...repeatsOf(m), time: first.time, timeSymbol: first.timeSymbol, key: first.key, clef: first.clef, tempo: first.tempo, notes: m.notes }
         : m)),
     };
   }
@@ -357,6 +415,8 @@
       if (measure.endClef !== 'treble') return CLEF_NAMES[measure.endClef];
       if (measure.timeSymbol) return '박자 기호';
       if (measure.implicit) return '번호 없는 마디';
+      if (hasRepeats(measure)) return '도돌이표';
+      if (measure.barline) return '겹세로줄·끝세로줄';
       if (measure.time[1] !== 4 || ![2, 3, 4].includes(measure.time[0]) || measure.time[0] !== first.time[0]) {
         return '박자';
       }
@@ -466,15 +526,15 @@
   // { id, title, pickup, time, key, clef, tempo, music } -> score. Mid-score changes: changes: { index: { key, ... } }.
   function build({ id, title, pickup = false, time, key, clef, tempo, music, changes = {} }) {
     const measures = parseMeasures(music).map((measure, i) => ({ ...(changes[i] || {}), ...measure }));
-    measures[0] = { time, key, clef, tempo, notes: measures[0].notes };
+    measures[0] = { ...measures[0], time, key, clef, tempo };
     return clean({ id, title, pickup, measures });
   }
 
   window.Notation = {
-    TYPES, STEPS, SEMITONES, CLEFS, MAX_TITLE, TEMPO_RANGE,
+    TYPES, STEPS, SEMITONES, CLEFS, MAX_TITLE, TEMPO_RANGE, MAX_MARK,
     frac, add, sub, mul, cmp, toNumber, ZERO,
     duration, midi, pitchesOf, lineOf, tieStarts, tieStops, hasChords, measureLength, filled, resolve,
-    isValid, clean, excerpt,
+    isValid, clean, excerpt, repeatsOf,
     fromLegacy, toLegacy, legacyProblem,
     parseMeasures, build,
   };

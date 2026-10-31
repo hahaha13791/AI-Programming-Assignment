@@ -128,7 +128,7 @@ T.test('36-2 변환 결과', async (T) => {
   T.check([upper1, upper2, lower].every((r) => r.score.measures.every((m) => Notation.cmp(Notation.filled(m.notes), [1, 1]) === 0)), '모든 마디의 박이 4/4로 맞음');
   T.check(upper1.score.measures[0].tempo === 72, '빠르기 72');
 
-  // What TODO 38~40 adds is refused for now, with the reason; other things can't be held at all (37단계 표기는 t37).
+  // What can't be held at all is refused with the reason (37단계 표기는 t37; 38~40단계의 화음·꾸밈음·도돌이표는 이제 담음).
   const refuse = (xml, expected, label) => {
     let message = '';
     try {
@@ -139,7 +139,7 @@ T.test('36-2 변환 결과', async (T) => {
     T.check(message.includes(expected), `${label}: "${message}"`);
   };
   const one = (body, a = attrs({ key: 0, time: [4, 4], clef: G_CLEF() })) => score36([{ name: 'X', measures: [a + body] }]);
-  refuse(one(n('C5', 48)).replace('</measure>', '<barline location="right"><repeat direction="backward"/></barline></measure>'), '도돌이표', '도돌이표 (40단계)');
+  refuse(one(n('C5', 24) + '<barline location="middle"><repeat direction="backward"/></barline>' + n('D5', 24)), '마디 중간 도돌이표', '마디 중간 도돌이표 (40단계부터 도돌이표는 담음)');
   refuse(one(n('C5', 48), attrs({ key: 0, time: [4, 4], clef: G_CLEF() }).replace('<beats>4</beats>', '<beats>3+2</beats>')), '혼합 박자', '혼합 박자');
   refuse(one(n('C5', 48) + n('D5', 12)), '긴 마디', '박자보다 긴 마디');
 });
@@ -205,9 +205,9 @@ T.test('36-4 불러오기와 연습 한 사이클', async (T) => {
 
   // A line that can't be brought in yet: the reason in the box, nothing stored.
   const count = scores.list().length;
-  // (38·39단계부터 화음·꾸밈음은 담으므로, 아직 담지 못하는 예는 도돌이표(40단계)로 바꿈.)
-  await importThroughBox(score36([{ name: 'X', measures: [attrs({ key: 0, time: [4, 4], clef: G_CLEF() }) + n('C5', 48) + '<barline location="right"><repeat direction="backward"/></barline>'] }]), 'repeat.musicxml');
-  T.check(!T.$('new-score').hidden && T.$('import-status').textContent.includes('도돌이표') && T.$('import-status').classList.contains('is-error') && scores.list().length === count,
+  // (38~40단계부터 화음·꾸밈음·도돌이표는 담으므로, 담지 못하는 예는 박자보다 긴 마디로 바꿈.)
+  await importThroughBox(score36([{ name: 'X', measures: [attrs({ key: 0, time: [4, 4], clef: G_CLEF() }) + n('C5', 48) + n('D5', 12)] }]), 'long.musicxml');
+  T.check(!T.$('new-score').hidden && T.$('import-status').textContent.includes('긴 마디') && T.$('import-status').classList.contains('is-error') && scores.list().length === count,
     `담지 못하는 표기는 창에 이유 (${T.$('import-status').textContent}), 저장 없음`);
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 });

@@ -135,10 +135,9 @@
   }
 
   // ---- one line → a v2 score (PRD #4-G-3) ----
-  // Nothing is bent to fit: what the format can't hold yet (TODO 37~40) or at all is refused with the reason.
+  // Nothing is bent to fit: what the format can't hold is refused with the reason.
   const N = Notation;
   const ZERO = N.ZERO;
-  const later = (what) => new ImportError(`아직 담지 못해요(${what}).`);
   const never = (what) => new ImportError(`불러올 수 없어요(${what}).`);
   const NOTE_TYPES = ['whole', 'half', 'quarter', 'eighth', '16th', '32nd', '64th'];
   const OTHER_TYPES = {
@@ -210,13 +209,38 @@
     });
   }
 
-  const REPEAT_WORDS = /\b(D\.?\s?C\.?|D\.?\s?S\.?|Da\s+Capo|Dal\s+Segno|Fine|Coda|Segno)\b/i;
-  const REPEAT_SOUNDS = ['dacapo', 'dalsegno', 'fine', 'tocoda', 'segno', 'coda', 'forward-repeat'];
+  // Repeat marks written as words, and those that go at a measure's end (the rest go at its start).
+  const REPEAT_WORDS = /\b(D\.\s?C\.?|D\.\s?S\.?|DC|DS|Da\s+Capo|Dal\s+Segno|Fine|Coda|Segno)\b/i;
+  const END_WORDS = /^(D\.\s?C|D\.\s?S|DC|DS|Da\s+Capo|Dal\s+Segno|Fine|To\s+Coda)/i;
+  // A jump only played (<sound>), with no words for it: the usual words.
+  const SOUND_WORDS = { dacapo: 'D.C.', dalsegno: 'D.S.', fine: 'Fine', tocoda: 'To Coda' };
+  const DOUBLE_BARS = ['light-light', 'heavy-heavy', 'heavy-light'];
 
-  function hasRepeats(doc) {
-    if (doc.querySelector('repeat, ending, segno, coda')) return true;
-    if ([...doc.getElementsByTagName('sound')].some((sound) => REPEAT_SOUNDS.some((name) => sound.hasAttribute(name)))) return true;
-    return [...doc.getElementsByTagName('words')].some((words) => REPEAT_WORDS.test(words.textContent));
+  // A measure's segno, coda and D.C./D.S./Fine/To Coda marks, from its directions and sounds:
+  // [{ kind: 'segno'|'coda'|'text', text, at: 'start'|'end' }].
+  function marksOf(items) {
+    const marks = [];
+    for (const item of items) {
+      if (item.kind !== 'direction' && item.kind !== 'sound') continue;
+      const signs = [];
+      const words = [];
+      if (item.kind === 'direction') {
+        for (const type of childrenOf(item.element, 'direction-type')) {
+          for (const child of type.children) {
+            if (child.nodeName === 'segno' || child.nodeName === 'coda') signs.push(child.nodeName);
+            else if (child.nodeName === 'words') words.push(child.textContent);
+          }
+        }
+      }
+      let text = words.join(' ').replace(/\s+/g, ' ').trim();
+      if (!REPEAT_WORDS.test(text)) text = '';
+      const sound = item.kind === 'sound' ? item.element : childOf(item.element, 'sound');
+      if (!text && sound) text = Object.entries(SOUND_WORDS).find(([name]) => sound.hasAttribute(name))?.[1] ?? '';
+      const at = text && END_WORDS.test(text) ? 'end' : 'start';
+      for (const kind of signs) marks.push({ kind, at });
+      if (text) marks.push({ kind: 'text', text: text.slice(0, N.MAX_MARK), at });
+    }
+    return marks;
   }
 
   // Quarter notes per minute from a direction or sound: <sound tempo>, else a plain <metronome> (a dotted beat
@@ -554,7 +578,6 @@
     const info = listed.parts[partIndex];
     const line = info?.lines[lineIndex];
     if (!line) throw new ImportError('고른 선율을 찾지 못했어요.');
-    if (hasRepeats(doc)) throw later('도돌이표·D.C. 등');
     const allParts = childrenOf(doc.documentElement, 'part');
     const walked = allParts.map(walkPart);
     const measures = walked[allParts.findIndex((p) => p.getAttribute('id') === info.id)];
@@ -571,6 +594,7 @@
     let tempo = null;
     let pending = {}; // changes written at a measure's end, for the next measure
     let pickup = false;
+    let ending = null; // the text of the ending bracket open now
     const out = [];
 
     measures.forEach((m, i) => {
@@ -649,6 +673,54 @@
       if (nextTempo !== tempo) measure.tempo = tempo = nextTempo;
       if (m.implicit && i > 0) measure.implicit = true;
 
+      // Repeat signs as written: barlines and endings of this part, marks from every part (parts often repeat them).
+      const previous = out[out.length - 1];
+      const endings = [];
+      for (const item of m.items) {
+        if (item.kind !== 'barline') continue;
+        const location = item.element.getAttribute('location') || 'right';
+        const style = childText(item.element, 'bar-style');
+        const repeat = childOf(item.element, 'repeat')?.getAttribute('direction');
+        if (location === 'middle') {
+          if (repeat) throw never('마디 중간 도돌이표');
+          continue;
+        }
+        if (location === 'left') {
+          if (repeat === 'forward') measure.repeatStart = true;
+          else if (DOUBLE_BARS.includes(style) && previous && !previous.repeatEnd) previous.barline = 'double';
+        } else if (repeat === 'backward') {
+          measure.repeatEnd = true;
+          delete measure.barline;
+        } else if (!measure.repeatEnd && DOUBLE_BARS.includes(style)) measure.barline = 'double';
+        else if (!measure.repeatEnd && style === 'light-heavy') measure.barline = 'final';
+        for (const e of childrenOf(item.element, 'ending')) {
+          const number = (e.getAttribute('number') ?? '').trim();
+          const text = (e.textContent.replace(/\s+/g, ' ').trim() || (number ? `${number}.` : '')).slice(0, N.MAX_MARK);
+          endings.push({ type: e.getAttribute('type'), text });
+        }
+      }
+      for (const e of endings.filter((x) => x.type === 'start' && x.text)) {
+        if (ending && previous?.ending && !previous.ending.end) previous.ending.end = 'open';
+        ending = e.text;
+        measure.ending = { text: ending, start: true };
+      }
+      if (!measure.ending && ending) measure.ending = { text: ending };
+      const stop = endings.find((x) => x.type === 'stop' || x.type === 'discontinue');
+      if (stop && measure.ending) {
+        measure.ending.end = stop.type === 'stop' ? 'stop' : 'open';
+        ending = null;
+      }
+      const marks = [];
+      const seen = new Set();
+      for (const part of walked) {
+        for (const mark of marksOf(part[i]?.items ?? [])) {
+          const key = `${mark.kind}|${mark.text}|${mark.at}`;
+          if (!seen.has(key)) marks.push(mark);
+          seen.add(key);
+        }
+      }
+      if (marks.length) measure.marks = marks;
+
       // The measure's length: as written (its furthest voice), or a whole measure when it is empty.
       const full = N.measureLength(time);
       const length = N.cmp(m.length, ZERO) > 0 ? m.length : full;
@@ -709,6 +781,8 @@
       out.push(measure);
     });
 
+    const last = out[out.length - 1];
+    if (ending && last.ending && !last.ending.end) last.ending.end = 'open';
     const dropped = pairTies(out.flatMap((m) => m.notes));
     if (dropped) notices.add(`이어질 음이 없는 붙임줄 ${dropped}개는 뺐어요`);
     for (const m of out) m.notes = m.notes.map(({ tieStart, tieStop, bracketStarts, bracketStops, whole, depth, ...note }) => note);
