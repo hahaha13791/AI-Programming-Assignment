@@ -1141,6 +1141,16 @@ button:focus-visible {
   min-width: 0;
 }
 
+.editor-title-note {
+  height: 1.3em;
+  margin: 2px 0 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--fs-sm);
+  color: var(--wrong);
+}
+
 .editor-label {
   font-size: var(--fs-sm);
   font-weight: 600;

@@ -166,3 +166,50 @@
     T.setMode('melody');
   });
 }
+
+// 개선-8·9: no saving under another score's title.
+T.test('개선-9 같은 제목으로는 저장하지 않음', async (T) => {
+  T.setMode('score');
+  const typeTitle = (text) => {
+    T.$('editor-title').value = text;
+    T.$('editor-title').dispatchEvent(new Event('input'));
+  };
+  const note = () => T.$('editor-title-note').textContent;
+  const toolsTop = () => T.$('editor-tabs').getBoundingClientRect().top;
+  T.$('btn-new-score').click();
+  T.$('btn-make-score').click();
+  document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', bubbles: true }));
+  typeTitle('새 곡');
+  const top = toolsTop();
+  T.check(!T.$('editor-save').disabled && note() === '', '겹치지 않는 제목은 저장할 수 있음');
+  for (const taken of ['반짝반짝 작은 별', '  반짝반짝   작은 별 ', '엘리제를 위하여 (베토벤)'.toUpperCase()]) {
+    typeTitle(taken);
+    T.check(T.$('editor-save').disabled && note().includes('같은 제목'), `"${taken}": 예시와 같은 제목이면 [저장]이 꺼지고 안내 (공백·대소문자 무시)`);
+  }
+  T.check(Math.abs(toolsTop() - top) < 0.5 && T.noHorizontalOverflow(), '안내가 떠도 도구 칸 위치가 그대로, 가로 넘침 없음');
+  T.$('editor-save').click();
+  T.check(!T.$('editor').hidden, '꺼진 [저장]을 눌러도 저장되지 않음');
+  typeTitle('반짝반짝 작은 별 2');
+  T.check(!T.$('editor-save').disabled && note() === '', '제목을 바꾸면 안내가 사라짐');
+  T.$('editor-save').click();
+  const id = scoreId;
+  T.check(T.$('editor').hidden && scores.get(id)?.title === '반짝반짝 작은 별 2', '저장됨');
+  // Its own title is no clash.
+  T.$('score-select').value = 'example-twinkle';
+  T.$('score-select').dispatchEvent(new Event('change'));
+  T.$('btn-edit-score').click();
+  T.check(!T.$('editor-save').disabled && note() === '', '이미 있는 악보는 자기 제목 그대로 저장할 수 있음');
+  typeTitle('반짝반짝 작은 별 2');
+  T.check(T.$('editor-save').disabled, '다른 악보(방금 만든 것)의 제목으로 바꾸면 안 됨');
+  typeTitle('반짝반짝 작은 별');
+  T.$('editor-save').click();
+  T.check(T.$('editor').hidden, '원래 제목으로 저장');
+  T.$('score-select').value = id;
+  T.$('score-select').dispatchEvent(new Event('change'));
+  T.deleteScore();
+  localStorage.removeItem(Scores.STORAGE_KEY);
+  localStorage.removeItem(Settings.SECTIONS_KEY);
+  T.$('score-select').value = scores.list()[0].id;
+  T.$('score-select').dispatchEvent(new Event('change'));
+  T.setMode('melody');
+});

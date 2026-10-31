@@ -84,7 +84,8 @@
   }
 
   // elements: { title, view, status, undo, redo, tabs, tools: { notes, measure, signs } }. onChange: after any change.
-  function create({ title, view, status, undo, redo, play, tabs, tools, speed = () => 1, onChange = () => {} }) {
+  // titleTaken(title): whether another score already has this title (it isn't saved then, PRD #4-H-1).
+  function create({ title, titleNote, view, status, undo, redo, play, tabs, tools, speed = () => 1, titleTaken = () => false, onChange = () => {} }) {
     let state = null;
     let playTimer = null;
 
@@ -571,9 +572,17 @@
       return true;
     }
 
+    // A title another score has: said under the title box (its place is kept, so nothing moves).
+    function renderTitleNote() {
+      const taken = Boolean(state && state.title.trim() && titleTaken(state.title));
+      titleNote.textContent = taken ? '같은 제목의 악보가 있어요. 다른 제목을 적어 주세요.' : '';
+      return taken;
+    }
+
     title.addEventListener('input', () => {
       if (!state) return;
       state.setTitle(title.value);
+      renderTitleNote();
       onChange();
     });
 
@@ -644,7 +653,7 @@
     return {
       open, close, apply, render, key, showTab, input, stopPlaying,
       get state() { return state; },
-      canSave: () => Boolean(state?.canSave()),
+      canSave: () => Boolean(state?.canSave()) && !renderTitleNote(),
       result: () => state?.result() ?? null,
     };
   }

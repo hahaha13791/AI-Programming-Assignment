@@ -159,6 +159,12 @@ const DELETE_WAIT = 3000;
 
 const scoreEditor = ScoreEditor.create({
   title: $('editor-title'),
+  titleNote: $('editor-title-note'),
+  // Titles compare without the spaces around and between words or the case of letters.
+  titleTaken: (title) => {
+    const key = (text) => text.trim().replace(/\s+/g, ' ').toLowerCase();
+    return scores.list().some((score) => score.id !== editingId && key(score.title) === key(title));
+  },
   view: $('editor-view'),
   status: $('editor-status'),
   undo: $('editor-undo'),
