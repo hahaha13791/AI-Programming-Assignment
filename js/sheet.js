@@ -211,8 +211,18 @@
     return groups;
   }
 
+  // A measure of nothing but rests, filling its time: drawn as one whole rest in its middle, in any time (the usual
+  // measure rest). Not a short measure, nor one with a tuplet or a clef change in it.
+  function isMeasureRest(measure, length) {
+    return measure.notes.every((n) => n.rest && !n.tuplet && !n.clef)
+      && N.cmp(length, N.measureLength(measure.time)) === 0;
+  }
+
   // Everything needed to space and draw one measure.
   function measureInfo(measure, index, prev) {
+    const length = N.filled(measure.notes); // what it holds, for its share of the row
+    const measureRest = isMeasureRest(measure, length);
+    if (measureRest) measure = { ...measure, notes: [{ type: 'whole', dots: 0, rest: true }] };
     const changes = {
       clef: !prev || prev.endClef !== measure.clef,
       key: !prev || prev.key.fifths !== measure.key.fifths || prev.key.mode !== measure.key.mode,
@@ -298,7 +308,7 @@
     if (measure.marks) min = Math.max(min, 6 + measure.marks.reduce((sum, mark) => sum + markWidth(mark), 0));
     return {
       ...measure, index, changes, notes, beams, graceBeams, tuplets: tupletGroups(measure.notes), min, prevKey: prev?.key,
-      leftExtra, rightExtra,
+      leftExtra, rightExtra, length, measureRest,
     };
   }
 
@@ -795,7 +805,7 @@
     // A short last row keeps the measure width of a full row instead of stretching.
     if (short) room *= short;
     // By what each measure holds, so a pickup or a short last measure is drawn shorter.
-    const widths = distribute(Math.max(room, mins.reduce((a, b) => a + b, 0)), mins, row.map((info) => N.toNumber(N.filled(info.notes))));
+    const widths = distribute(Math.max(room, mins.reduce((a, b) => a + b, 0)), mins, row.map((info) => N.toNumber(info.length)));
     const end = STAFF_LEFT + prefixes.reduce((a, b) => a + b, 0) + widths.reduce((a, b) => a + b, 0);
 
     for (let line = 0; line <= TOP_LINE; line += 2) {
@@ -827,9 +837,11 @@
       const sizes = distribute(widths[k] - MEASURE_PAD_LEFT - MEASURE_PAD_RIGHT - info.leftExtra - info.rightExtra,
         info.notes.map((n) => n.min), info.notes.map((n) => N.toNumber(N.duration(n.note))));
       let nx = x + MEASURE_PAD_LEFT + info.leftExtra;
+      const middle = (x + MEASURE_PAD_LEFT + info.leftExtra + x + widths[k] - MEASURE_PAD_RIGHT - info.rightExtra) / 2;
       const drawn = info.notes.map((item, i) => {
         if (item.clefChange) drawClef(group, item.clefChange, nx + 1, yOf, true);
-        const result = drawNote(group, item, nx + item.parts.left + item.parts.head / 2, yOf);
+        const result = drawNote(group, item, info.measureRest ? middle : nx + item.parts.left + item.parts.head / 2, yOf);
+        if (info.measureRest) group.lastElementChild.dataset.measureRest = '';
         nx += sizes[i];
         return result;
       });

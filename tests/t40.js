@@ -203,3 +203,32 @@
     clearInterval(ticker);
   });
 }
+
+// 개선-6·7: a measure of rests is one whole rest in its middle, in any time; widths follow what measures hold.
+T.test('개선-7 마디 쉼표와 마디 폭', async (T) => {
+  const N = Notation;
+  const div = document.createElement('div');
+  div.style.width = '700px';
+  document.body.append(div);
+  const score = (time, music, pickup = false) => N.build({ id: 'r', title: 'r', pickup, key: { fifths: 0, mode: 'major' }, tempo: 60, clef: 'treble', time, music });
+  for (const [time, music] of [[[3, 4], 'C5:q D5:q E5:q | r:h. | r:q r:h | C5:h.'], [[6, 8], 'C5:q. D5:q. | r:q. r:q. | r:h. | C5:h.'], [[4, 4], 'C5:w | r:h r:h | r:w | C5:w']]) {
+    Sheet.draw(div, score(time, music));
+    const m = (i) => div.querySelector(`.sv-measure[data-measure="${i}"]`);
+    const rests = [1, 2].map((i) => [...m(i).querySelectorAll('.sv-note[data-rest]')]);
+    const whole = rests.every((r) => r.length === 1 && r[0].dataset.type === 'whole' && 'measureRest' in r[0].dataset);
+    const centered = [1, 2].every((i) => {
+      const b = m(i).querySelector('.sv-rest-block').getBBox();
+      const mid = (Number(m(i).dataset.x0) + Number(m(i).dataset.x1)) / 2;
+      return Math.abs(b.x + b.width / 2 - mid) < 6;
+    });
+    T.check(whole && centered, `${time.join('/')}: 쉼표만 있는 마디는 온쉼표 하나, 마디 가운데`);
+  }
+  Sheet.draw(div, score([4, 4], 'r:8 | r:h C5:h | 3[ r:8 r:8 r:8 ] r:q r:h | C5:w', true));
+  const types = (i) => [...div.querySelectorAll(`.sv-measure[data-measure="${i}"] .sv-note`)].map((n) => n.dataset.type).join(',');
+  T.check(types(0) === 'eighth' && types(1) === 'half,half' && types(2) === 'eighth,eighth,eighth,quarter,half',
+    `못갖춘마디·음이 섞인 마디·잇단 쉼표 마디는 그대로 (${types(0)} / ${types(1)} / ${types(2)})`);
+  Sheet.draw(div, score([4, 4], 'C5:q | C5:q D5:q E5:q F5:q | C5:w', true));
+  const width = (i) => { const g = div.querySelector(`.sv-measure[data-measure="${i}"]`); return Number(g.dataset.x1) - Number(g.dataset.x0); };
+  T.check(width(0) < width(1) * 0.6 && Math.abs(width(1) - width(2)) < width(1) * 0.3, `못갖춘마디는 좁게, 온마디끼리는 비슷하게 (${[0, 1, 2].map((i) => Math.round(width(i)))})`);
+  div.remove();
+});
