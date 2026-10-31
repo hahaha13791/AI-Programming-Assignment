@@ -202,10 +202,11 @@ T.test('27-6 편집기: 만들기·다시 열기·편집·삭제', async (T) => 
   T.$('editor-title').value = '새 시험 악보';
   T.$('editor-title').dispatchEvent(new Event('input'));
   T.check(T.$('editor-save').disabled, '쉼표뿐인 새 악보는 저장할 수 없음');
-  // (박자 바꾸기 도구는 45단계: 그때까지 편집 동작으로 3/4로 바꾼다.)
-  scoreEditor.apply((s) => {
-    s.measures[0] = { ...s.measures[0], time: [3, 4], notes: [{ type: 'half', dots: 1, rest: true }] };
-  });
+  T.$('editor-tab-measure').click();
+  T.$('editor-time-beats').value = '3';
+  T.$('editor-time-type').value = '4';
+  T.$('editor-time-apply').click();
+  T.$('editor-tab-notes').click();
   document.querySelector('#editor-tool-notes [data-type="quarter"]').click();
   T.$('editor-sharp').click();
   T.editorPad(1);

@@ -235,6 +235,59 @@
     return { notes: out, index: first };
   }
 
+  // A measure's notes as whole pieces in time: a note (with the grace notes before it) or a whole tuplet group.
+  function unitsOf(notes) {
+    const ids = groupIds(notes);
+    const units = [];
+    let time = ZERO;
+    let graces = [];
+    notes.forEach((n, i) => {
+      if (n.grace) {
+        graces.push(i);
+        return;
+      }
+      const length = N.duration(n);
+      const group = n.tuplet ? ids[i].tuplet : null;
+      const last = units[units.length - 1];
+      if (group !== null && last && last.group === group) {
+        last.indices.push(...graces, i);
+        last.end = add(last.end, length);
+      } else {
+        units.push({ indices: [...graces, i], group, start: time, end: add(time, length) });
+      }
+      graces = [];
+      time = add(time, length);
+    });
+    return { units, trailing: graces };
+  }
+
+  // A measure's notes made exactly `length` long: rests added at the end, or the notes past it taken off (a tuplet
+  // group whole) and the gap filled with rests. Returns { notes, removed (notes that weren't rests) } or null.
+  function fitTo(notes, length) {
+    const filled = N.filled(notes);
+    const diff = cmp(filled, length);
+    if (diff === 0) return { notes, removed: 0 };
+    if (diff < 0) {
+      const rests = restsFor(sub(length, filled));
+      return rests ? { notes: [...notes, ...rests], removed: 0 } : null;
+    }
+    const { units } = unitsOf(notes);
+    const kept = units.filter((u) => cmp(u.end, length) <= 0);
+    const end = kept.length ? kept[kept.length - 1].end : ZERO;
+    const rests = restsFor(sub(length, end));
+    if (!rests) return null;
+    const keep = new Set(kept.flatMap((u) => u.indices));
+    const removed = notes.filter((n, i) => !keep.has(i) && !n.rest).length;
+    return { notes: [...notes.filter((n, i) => keep.has(i)), ...rests], removed };
+  }
+
+  const ATTRS = ['time', 'timeSymbol', 'key', 'clef', 'tempo'];
+  // Whether a score being edited holds together. Like Notation.isValid, but a score of rests only is fine while
+  // editing (a new score starts so; saving still needs a note): a grace note on a measure of its own stands in.
+  const STAND_IN = { notes: [{ type: 'eighth', dots: 0, grace: true, pitch: { step: 'C', alter: 0, octave: 4 } }] };
+  const sound = (score) => N.isValid({ ...score, id: 'x', title: 'x', measures: [...score.measures, STAND_IN] });
+  const resolved = (score) => N.resolve({ ...score, id: 'x', title: 'x' });
+
   // Ties kept only where both ends are still there, the same pitch in neighbouring notes (after any change).
   function fixTies(score) {
     const notes = score.measures.flatMap((m) => m.notes);
@@ -528,6 +581,192 @@
       });
     }
 
+    // ---- [마디] tools (PRD #4-H-3), from the cursor's measure ----
+
+    // A new time from this measure until the next time change. Full measures in that run grow (rests) or shrink
+    // (the notes past the end go); a short one (a pickup, a split measure) shrinks only if it's now too long.
+    // Returns the number of notes taken off, or false if nothing changed or it can't be written.
+    function setTime(beats, beatType, symbol) {
+      let removed = 0;
+      const done = change((draft, c) => {
+        const before = resolved(draft);
+        const from = c.measure;
+        const old = before[from];
+        if (String(old.time) === `${beats},${beatType}` && (old.timeSymbol ?? null) === (symbol ?? null)) return false;
+        const newLength = N.measureLength([beats, beatType]);
+        for (let i = from; i < draft.measures.length; i++) {
+          if (i > from && draft.measures[i].time) break;
+          const m = draft.measures[i];
+          const full = cmp(N.filled(m.notes), N.measureLength(before[i].time)) >= 0;
+          const target = full ? newLength : (cmp(N.filled(m.notes), newLength) > 0 ? newLength : null);
+          if (target) {
+            const fitted = fitTo(m.notes, target);
+            if (!fitted) return false;
+            m.notes = fitted.notes;
+            removed += fitted.removed;
+          }
+        }
+        draft.measures[from].time = [beats, beatType];
+        if (symbol) draft.measures[from].timeSymbol = symbol;
+        else delete draft.measures[from].timeSymbol;
+        if (from === 0) draft.pickup = cmp(N.filled(draft.measures[0].notes), newLength) < 0;
+        fixTies(draft);
+        return sound(draft);
+      });
+      return done ? removed : false;
+    }
+
+    // An attribute that only says what is already in force is left out (except on the first measure).
+    function tidy(draft, index, name) {
+      if (index === 0) return;
+      const before = resolved(draft)[index - 1];
+      const inForce = name === 'clef' ? before.endClef : name === 'tempo' ? before.endTempo : before[name];
+      if (JSON.stringify(draft.measures[index][name]) === JSON.stringify(inForce)) delete draft.measures[index][name];
+    }
+
+    function setKey(fifths, mode) {
+      return change((draft, c) => {
+        const now = resolved(draft)[c.measure].key;
+        if (now.fifths === fifths && now.mode === mode) return false;
+        draft.measures[c.measure].key = { fifths, mode };
+        tidy(draft, c.measure, 'key');
+        for (let i = c.measure + 1; i < draft.measures.length; i++) tidy(draft, i, 'key');
+        return true;
+      });
+    }
+
+    // A clef or a tempo at the measure's start, or (atNote) from the cursor note on.
+    function setNoteAttr(name, value, atNote) {
+      return change((draft, c) => {
+        const m = draft.measures[c.measure];
+        if (atNote && c.note > 0) {
+          const note = m.notes[c.note];
+          if (note[name] === value) return false;
+          note[name] = value;
+        } else {
+          if (m[name] === value && (c.measure === 0 || m[name] !== undefined)) return false;
+          m[name] = value;
+          if (c.note === 0 && m.notes[0][name] !== undefined) delete m.notes[0][name];
+          tidy(draft, c.measure, name);
+        }
+        return sound(draft);
+      });
+    }
+
+    const setClef = (clef, atNote = false) => N.CLEFS.includes(clef) && setNoteAttr('clef', clef, atNote);
+    const setTempo = (tempo, atNote = false) => {
+      const value = Math.round(Number(tempo));
+      return value >= N.TEMPO_RANGE[0] && value <= N.TEMPO_RANGE[1] && setNoteAttr('tempo', value, atNote);
+    };
+
+    // The first measure as a pickup of `length` (a fraction of a whole note), or a full measure (null).
+    function setPickup(length) {
+      return change((draft) => {
+        const time = resolved(draft)[0].time;
+        const full = N.measureLength(time);
+        const target = length && cmp(length, full) < 0 ? length : full;
+        const fitted = fitTo(draft.measures[0].notes, target);
+        if (!fitted || cmp(N.filled(draft.measures[0].notes), target) === 0 && draft.pickup === (target !== full)) return false;
+        draft.measures[0].notes = fitted.notes;
+        draft.pickup = target !== full;
+        fixTies(draft);
+        return sound(draft);
+      });
+    }
+
+    // The cursor's measure (not the first) made `length` long (null: its full time), counted in the numbering or not.
+    function setMeasureLength(length, implicit = false) {
+      return change((draft, c) => {
+        if (c.measure === 0) return false;
+        const m = draft.measures[c.measure];
+        const full = N.measureLength(resolved(draft)[c.measure].time);
+        const target = length && cmp(length, full) < 0 ? length : full;
+        const fitted = fitTo(m.notes, target);
+        if (!fitted) return false;
+        m.notes = fitted.notes;
+        if (implicit) m.implicit = true;
+        else delete m.implicit;
+        fixTies(draft);
+        return sound(draft);
+      });
+    }
+
+    // A measure of rests before the cursor's. Before the first, it takes over the first's settings; inside an ending
+    // bracket, it joins the bracket.
+    function insertMeasure() {
+      return change((draft, c) => {
+        const i = c.measure;
+        const at = resolved(draft)[i];
+        const fresh = { notes: restsFor(N.measureLength(at.time)) };
+        const old = draft.measures[i];
+        if (i === 0) {
+          for (const name of ATTRS) {
+            if (old[name] !== undefined) {
+              fresh[name] = old[name];
+              delete old[name];
+            }
+          }
+          if (draft.pickup) {
+            draft.pickup = false; // the old pickup is now inside the score
+            old.implicit = true;
+          }
+        }
+        const prev = draft.measures[i - 1];
+        if (prev?.ending && !prev.ending.end && old.ending && !old.ending.start) fresh.ending = { text: old.ending.text };
+        draft.measures.splice(i, 0, fresh);
+        Object.assign(c, { note: 0, head: 0 });
+        fixTies(draft);
+        return sound(draft);
+      });
+    }
+
+    // Takes the cursor's measure out. The settings that start there carry on in the next measure, and an ending
+    // bracket keeps its start and end.
+    function deleteMeasure() {
+      return change((draft, c) => {
+        if (draft.measures.length < 2) return false;
+        const i = c.measure;
+        const all = resolved(draft);
+        const gone = draft.measures[i];
+        const next = draft.measures[i + 1];
+        if (next) {
+          if (i === 0) {
+            for (const name of ATTRS) if (next[name] === undefined && all[1][name] !== undefined) next[name] = all[1][name];
+            if (!next.time) next.time = all[1].time;
+            next.clef = next.clef ?? all[1].clef;
+            next.tempo = next.tempo ?? all[1].tempo;
+            next.key = next.key ?? all[1].key;
+            delete next.implicit;
+          } else {
+            for (const name of ['time', 'timeSymbol', 'key', 'clef', 'tempo']) {
+              if (gone[name] !== undefined && next[name] === undefined) next[name] = gone[name];
+            }
+          }
+          if (gone.ending?.start && next.ending && !next.ending.start) next.ending.start = true;
+        }
+        const prev = draft.measures[i - 1];
+        if (gone.ending?.end && prev?.ending && !prev.ending.end && !gone.ending.start) prev.ending.end = gone.ending.end;
+        draft.measures.splice(i, 1);
+        if (i === 0) draft.pickup = cmp(N.filled(draft.measures[0].notes), N.measureLength(resolved(draft)[0].time)) < 0;
+        for (let k = 1; k < draft.measures.length; k++) for (const name of ['key', 'clef', 'tempo']) tidy(draft, k, name);
+        Object.assign(c, { measure: Math.min(i, draft.measures.length - 1), note: 0, head: 0 });
+        fixTies(draft);
+        return sound(draft);
+      });
+    }
+
+    function setFirstNumber(number) {
+      return change((draft) => {
+        const n = Math.round(Number(number));
+        if (!(n >= 0 && n <= 99999)) return false;
+        const usual = draft.pickup ? 0 : 1;
+        if ((draft.firstNumber ?? usual) === n) return false;
+        if (n === usual) delete draft.firstNumber;
+        else draft.firstNumber = n;
+        return true;
+      });
+    }
+
     // The score as it would be stored (its id is the app's business: the old one, or none for a new score).
     function result() {
       return N.clean({ ...trimmed(copy(doc)), id: id ?? 'new', title: title.trim() });
@@ -551,6 +790,7 @@
       canRedo: () => future.length > 0,
       move, moveMeasure, select, result, canSave,
       fits, insert, setLength, erase, semitone, octave, toggleTie, isTied, tuplet, untuplet,
+      setTime, setKey, setClef, setTempo, setPickup, setMeasureLength, insertMeasure, deleteMeasure, setFirstNumber,
       alterAt: (measure, at, step, oct) => alterAt(doc, measure, at, step, oct),
       clefAt: (measure = cursor.measure, at = cursor.note) => clefAt(doc, measure, at),
     };

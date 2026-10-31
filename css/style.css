@@ -1294,6 +1294,44 @@ button:focus-visible {
   font-weight: 600;
 }
 
+.ed-field {
+  align-items: center;
+}
+
+.ed-label {
+  flex: 0 0 5.5rem;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.ed-select {
+  min-height: 2.4rem;
+  max-width: 100%;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+}
+
+#editor-key {
+  max-width: 13rem;
+}
+
+.ed-number.ed-wide {
+  width: 4.2rem;
+}
+
+.ed-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-sm);
+}
+
 .ed-ratio {
   display: inline-flex;
   align-items: center;

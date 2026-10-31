@@ -37,6 +37,38 @@
 
   const diatonic = (pitch) => pitch.octave * 7 + STEPS.indexOf(pitch.step);
 
+  // [마디] tools (PRD #4-H-3).
+  const MAJOR = { '-7': 'C♭', '-6': 'G♭', '-5': 'D♭', '-4': 'A♭', '-3': 'E♭', '-2': 'B♭', '-1': 'F', 0: 'C', 1: 'G', 2: 'D', 3: 'A', 4: 'E', 5: 'B', 6: 'F♯', 7: 'C♯' };
+  const MINOR = { '-7': 'A♭', '-6': 'E♭', '-5': 'B♭', '-4': 'F', '-3': 'C', '-2': 'G', '-1': 'D', 0: 'A', 1: 'E', 2: 'B', 3: 'F♯', 4: 'C♯', 5: 'G♯', 6: 'D♯', 7: 'A♯' };
+  const CLEF_LABELS = {
+    treble: '높은음자리표', bass: '낮은음자리표', alto: '알토 음자리표', tenor: '테너 음자리표',
+    'treble-8vb': '높은음자리표 8vb', 'treble-8va': '높은음자리표 8va', 'bass-8vb': '낮은음자리표 8vb', 'bass-8va': '낮은음자리표 8va',
+  };
+
+  function select(id, options, label) {
+    const field = document.createElement('select');
+    field.id = id;
+    field.className = 'ed-select';
+    field.setAttribute('aria-label', label);
+    for (const [value, text] of options) {
+      const option = document.createElement('option');
+      option.value = String(value);
+      option.textContent = text;
+      field.append(option);
+    }
+    return field;
+  }
+
+  function field(label, ...children) {
+    const row = document.createElement('div');
+    row.className = 'ed-row ed-field';
+    const name = document.createElement('span');
+    name.className = 'ed-label';
+    name.textContent = label;
+    row.append(name, ...children);
+    return row;
+  }
+
   // "3마디 2번째 · F♯4 4분음표" for the status line under the score.
   function describe(score, cursor) {
     const measure = N.resolve(score)[cursor.measure];
@@ -145,6 +177,120 @@
     }
     tieButton.addEventListener('click', toggleTie);
 
+    // ---- the [마디] panel ----
+    const range = (from, to) => Array.from({ length: to - from + 1 }, (_, k) => from + k);
+    const beatsField = select('editor-time-beats', range(1, 32).map((n) => [n, n]), '박자 분자');
+    const typeField = select('editor-time-type', [1, 2, 4, 8, 16, 32].map((n) => [n, n]), '박자 분모');
+    const symbolField = select('editor-time-symbol', [['', '숫자'], ['common', 'C'], ['cut', '¢']], '박자 기호');
+    const timeButton = button('바꾸기', { id: 'editor-time-apply' });
+    const keyField = select('editor-key', range(-7, 7).map((f) => [f, `${f > 0 ? `♯${f}` : f < 0 ? `♭${-f}` : '없음'} (${MAJOR[f]}장조·${MINOR[f]}단조)`]), '조표');
+    const modeField = select('editor-mode', [['major', '장조'], ['minor', '단조']], '장조/단조');
+    const keyButton = button('바꾸기', { id: 'editor-key-apply' });
+    const clefField = select('editor-clef', N.CLEFS.map((c) => [c, CLEF_LABELS[c]]), '음자리표');
+    const clefMeasure = button('마디 첫머리', { id: 'editor-clef-measure' });
+    const clefNote = button('커서 음부터', { id: 'editor-clef-note' });
+    const tempoField = document.createElement('input');
+    Object.assign(tempoField, { type: 'number', id: 'editor-tempo', min: N.TEMPO_RANGE[0], max: N.TEMPO_RANGE[1] });
+    tempoField.className = 'ed-number ed-wide';
+    tempoField.setAttribute('aria-label', '빠르기 (4분음표 기준 1분에)');
+    const tempoMeasure = button('마디 첫머리', { id: 'editor-tempo-measure' });
+    const tempoNote = button('커서 음부터', { id: 'editor-tempo-note' });
+    const pickupField = select('editor-pickup', [], '못갖춘마디 길이');
+    const pickupButton = button('바꾸기', { id: 'editor-pickup-apply' });
+    const lengthField = select('editor-measure-length', [], '이 마디 길이');
+    const implicitField = document.createElement('input');
+    Object.assign(implicitField, { type: 'checkbox', id: 'editor-implicit' });
+    const implicitLabel = document.createElement('label');
+    implicitLabel.className = 'ed-check';
+    implicitLabel.append(implicitField, ' 번호 세지 않기');
+    const lengthButton = button('바꾸기', { id: 'editor-measure-apply' });
+    const insertButton = button('앞에 마디 넣기', { id: 'editor-insert-measure' });
+    const deleteButton = button('마디 지우기', { id: 'editor-delete-measure' });
+    const firstField = document.createElement('input');
+    Object.assign(firstField, { type: 'number', id: 'editor-first-number', min: 0, max: 99999 });
+    firstField.className = 'ed-number ed-wide';
+    firstField.setAttribute('aria-label', '첫 마디 번호');
+    const firstButton = button('바꾸기', { id: 'editor-first-apply' });
+    tools.measure.append(
+      field('박자', beatsField, '/', typeField, symbolField, timeButton),
+      field('조표', keyField, modeField, keyButton),
+      field('음자리표', clefField, clefMeasure, clefNote),
+      field('빠르기 ♩=', tempoField, tempoMeasure, tempoNote),
+      field('못갖춘마디', pickupField, pickupButton),
+      field('이 마디 길이', lengthField, implicitLabel, lengthButton),
+      field('마디', insertButton, deleteButton),
+      field('첫 마디 번호', firstField, firstButton),
+    );
+
+    // Lengths in beats of the time at the cursor: [value "n/d" of a whole note, label].
+    function beatChoices(time, none) {
+      const [beats, beatType] = time;
+      return [['', none], ...range(1, beats - 1).map((k) => [`${k}/${beatType}`, `${k}박`])];
+    }
+    const fraction = (value) => (value ? value.split('/').map(Number) : null);
+    const reduce = (f) => (f ? N.frac(f[0], f[1]) : null);
+
+    function measureTool(act, message) {
+      const result = act();
+      if (result === false) {
+        flash(message);
+        return;
+      }
+      render();
+      if (typeof result === 'number' && result > 0) flash(`넘치는 음 ${result}개를 지웠어요. 되돌리기로 살릴 수 있어요.`);
+    }
+
+    timeButton.addEventListener('click', () => {
+      let beats = Number(beatsField.value);
+      let type = Number(typeField.value);
+      const symbol = symbolField.value || undefined;
+      if (symbol === 'common') [beats, type] = [4, 4];
+      if (symbol === 'cut') [beats, type] = [2, 2];
+      measureTool(() => state.setTime(beats, type, symbol), '박자가 이미 그렇거나 바꿀 수 없어요.');
+    });
+    keyButton.addEventListener('click', () => measureTool(() => state.setKey(Number(keyField.value), modeField.value), '조표가 이미 그래요.'));
+    clefMeasure.addEventListener('click', () => measureTool(() => state.setClef(clefField.value, false), '음자리표가 이미 그래요.'));
+    clefNote.addEventListener('click', () => measureTool(() => state.setClef(clefField.value, true), '음자리표가 이미 그래요.'));
+    tempoMeasure.addEventListener('click', () => measureTool(() => state.setTempo(tempoField.value, false), `빠르기는 ${N.TEMPO_RANGE[0]}~${N.TEMPO_RANGE[1]}이에요.`));
+    tempoNote.addEventListener('click', () => measureTool(() => state.setTempo(tempoField.value, true), `빠르기는 ${N.TEMPO_RANGE[0]}~${N.TEMPO_RANGE[1]}이에요.`));
+    pickupButton.addEventListener('click', () => measureTool(() => state.setPickup(reduce(fraction(pickupField.value))), '첫 마디가 이미 그래요.'));
+    lengthButton.addEventListener('click', () => measureTool(() => state.setMeasureLength(reduce(fraction(lengthField.value)), implicitField.checked), '첫 마디는 [못갖춘마디]로 정해요.'));
+    insertButton.addEventListener('click', () => measureTool(() => state.insertMeasure(), '마디를 넣을 수 없어요.'));
+    deleteButton.addEventListener('click', () => measureTool(() => state.deleteMeasure(), '마디가 하나뿐이라 지울 수 없어요.'));
+    firstButton.addEventListener('click', () => measureTool(() => state.setFirstNumber(firstField.value), '0~99999로 적어 주세요.'));
+
+    // The [마디] fields show what is in force at the cursor.
+    function renderMeasureTools() {
+      const score = { ...state.score, id: 'x', title: 'x' };
+      const all = N.resolve(score);
+      const m = all[state.cursor.measure];
+      beatsField.value = String(m.time[0]);
+      typeField.value = String(m.time[1]);
+      symbolField.value = m.timeSymbol ?? '';
+      keyField.value = String(m.key.fifths);
+      modeField.value = m.key.mode;
+      clefField.value = state.clefAt();
+      let tempo = m.tempo;
+      state.score.measures[state.cursor.measure].notes.slice(0, state.cursor.note + 1).forEach((n) => { if (n.tempo !== undefined) tempo = n.tempo; });
+      tempoField.value = String(tempo);
+      const first = all[0];
+      pickupField.replaceChildren(...beatChoices(first.time, '없음 (온마디)').map(([v, t]) => Object.assign(document.createElement('option'), { value: v, textContent: t })));
+      const firstLength = N.filled(state.score.measures[0].notes);
+      pickupField.value = state.score.pickup ? `${firstLength[0] * (first.time[1] / firstLength[1])}/${first.time[1]}` : '';
+      lengthField.replaceChildren(...beatChoices(m.time, '온마디').map(([v, t]) => Object.assign(document.createElement('option'), { value: v, textContent: t })));
+      const own = N.filled(state.score.measures[state.cursor.measure].notes);
+      const short = N.cmp(own, N.measureLength(m.time)) < 0;
+      lengthField.value = short ? `${own[0] * (m.time[1] / own[1])}/${m.time[1]}` : '';
+      if (lengthField.value === '' && short) lengthField.value = '';
+      implicitField.checked = Boolean(state.score.measures[state.cursor.measure].implicit);
+      const firstMeasure = state.cursor.measure === 0;
+      lengthField.disabled = firstMeasure;
+      implicitField.disabled = firstMeasure;
+      lengthButton.disabled = firstMeasure;
+      deleteButton.disabled = state.score.measures.length < 2;
+      firstField.value = String(all[0].number);
+    }
+
     function chooseLength(type) {
       input.type = type;
       input.dots = 0;
@@ -224,6 +370,7 @@
       for (const b of tupletButtons) b.disabled = Boolean(target.grace || target.tuplet2);
       customButton.disabled = Boolean(target.grace || target.tuplet2);
       untupletButton.disabled = !target.tuplet;
+      renderMeasureTools();
       const fitsNow = state.fits(input.type, input.dots);
       restButton.disabled = !fitsNow;
       pad.classList.toggle('is-disabled', !fitsNow);
