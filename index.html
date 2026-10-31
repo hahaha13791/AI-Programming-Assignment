@@ -28,6 +28,16 @@
           <button type="button" class="chord-type" role="radio" aria-checked="false" data-type="seventh">7화음</button>
         </div>
         <p class="score-notice" id="score-notice" role="status" hidden></p>
+        <button type="button" class="btn-settings" id="btn-settings" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings" aria-label="설정" hidden>⚙&#xFE0E;</button>
+        <div class="settings" id="settings" role="dialog" aria-labelledby="settings-title" hidden>
+          <h3 class="settings-title" id="settings-title">설정</h3>
+          <fieldset class="settings-group">
+            <legend>빠르기</legend>
+            <label><input type="radio" name="speed" value="1"> 원래 빠르기</label>
+            <label><input type="radio" name="speed" value="0.75"> 느리게 (75%)</label>
+            <label><input type="radio" name="speed" value="0.5"> 아주 느리게 (50%)</label>
+          </fieldset>
+        </div>
       </div>
       <div class="level-area">
         <div class="difficulty" role="radiogroup" aria-label="난이도 선택">
@@ -135,6 +145,8 @@
   <script src="js/rhythm.js"></script>
   <script src="js/data/rhythms.js"></script>
   <script src="js/notation.js"></script>
+  <script src="js/settings.js"></script>
+  <script src="js/playback.js"></script>
   <script src="js/data/examples.js"></script>
   <script src="js/scores.js"></script>
   <script src="js/score.js"></script>

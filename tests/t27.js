@@ -178,7 +178,8 @@ T.test('27-6 편집기 범위 밖 예시', async (T) => {
     const button = T.$('btn-edit-score');
     T.check(!button.disabled && button.textContent === '삭제' && button.dataset.action === 'delete', `${id}: [편집] 자리가 [삭제]`);
     T.check(!T.$('score-notice').hidden && T.$('score-notice').textContent.includes('편집할 수 없어요'), `이유 안내: "${T.$('score-notice').textContent}"`);
-    T.check(T.$('btn-question').disabled && T.$('staff-hint').textContent.includes('곧 그려져요'), '연습은 임시로 잠김');
+    // From TODO 30 the question can be heard (first two measures), but input stays locked until TODO 33.
+    T.check(T.$('staff-hint').textContent.includes('곧 그려져요') && current === null, '연습은 임시로 잠김');
     T.check(Math.abs(head() - before) < 0.5, `안내가 보여도 패널 머리 높이가 같음 (${head().toFixed(1)}px)`);
   }
   T.$('score-select').value = 'example-twinkle';
@@ -237,6 +238,8 @@ T.test('27-6 새 예시도 지울 수 있음', async (T) => {
   T.check(T.$('editor').hidden, '편집기는 열리지 않음');
   button.click();
   T.check(!scores.get('example-mountain-king') && !Scores.open().get('example-mountain-king'), '두 번 눌러 삭제됨 (저장소 포함)');
+  // Put it back for the tests that run after this one (the app's list lives on in this page).
+  scores.save(EXAMPLE_SCORES.find((s) => s.id === 'example-mountain-king'));
   T.check(scoreId === 'example-twinkle' && T.$('score-select').value === 'example-twinkle', '지운 뒤 첫 악보로 돌아감');
   select.value = 'example-greensleeves';
   select.dispatchEvent(new Event('change'));

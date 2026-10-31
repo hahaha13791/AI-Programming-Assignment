@@ -323,6 +323,76 @@ button:focus-visible {
   outline-offset: 2px;
 }
 
+/* 내 악보 ⚙: at the right end of the 악보 title row, with its settings box below it. */
+.panel-head {
+  position: relative;
+}
+
+.btn-settings {
+  flex: none;
+  width: 32px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.btn-settings[aria-expanded="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.btn-settings:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.settings {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 10;
+  width: min(240px, 100%);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+}
+
+.settings-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--fs-sm);
+}
+
+.settings-group {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.settings-group legend {
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.settings-group label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  cursor: pointer;
+}
+
 .btn-small {
   flex: none;
   min-height: 0;
@@ -373,8 +443,8 @@ button:focus-visible {
 }
 
 .score-notice {
-  margin: 0;
-  max-width: 70%;
+  margin: 0 0 0 auto;
+  max-width: 62%;
   font-size: 0.75rem;
   line-height: 1.2;
   color: var(--missed);

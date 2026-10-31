@@ -77,6 +77,8 @@ function setMode(next) {
   const score = mode === 'score';
   $('difficulty-title').textContent = score ? '악보' : '난이도';
   $('score-picker').hidden = !score;
+  $('btn-settings').hidden = !score;
+  closeSettings();
   renderScoreNotice();
   if (score) renderScorePicker();
   else updateLevelDescriptions();
@@ -396,7 +398,8 @@ function newQuestion() {
     current = pick(PATTERNS[level], current);
     staff.reset(current.length);
   }
-  $('btn-question').disabled = !current;
+  $('btn-question').disabled = !current && !(mode === 'score' && playRange());
+  $('btn-tonic').textContent = `기준음(${mode === 'score' ? scoreTonic().label : '도'}) 듣기`;
   const waiting = mode === 'score' && scoreId && scoreEditProblem();
   showScorePreview(waiting ? scores.get(scoreId) : null);
   setHint(current ? 'ready' : waiting ? 'pending' : scoreId ? 'noNotes' : 'empty');
@@ -529,7 +532,14 @@ function gradeRhythm(input) {
   };
 }
 
-$('btn-tonic').addEventListener('click', () => Sound.play([TONIC]));
+// 내 악보: the reference note is the tonic of the section's key ("도" in major, "라" in minor).
+function scoreTonic() {
+  const score = scoreId && scores.get(scoreId);
+  const range = playRange();
+  return score && range ? Playback.tonicOf(score, range.start, range.end) : { midi: TONIC, label: '도' };
+}
+
+$('btn-tonic').addEventListener('click', () => Sound.play([mode === 'score' ? scoreTonic().midi : TONIC]));
 
 function midis(notes) {
   return notes.map(Staff.noteToMidi);
@@ -547,10 +557,19 @@ function playRhythm() {
   return Sound.playEvents(events, total);
 }
 
-// 내 악보: the section in the score's rhythm, after the tonic and a pause when `tonic` is set.
-// Returns the playback length in seconds.
+// The measures 내 악보 plays: the section, or (until TODO 33) the first two measures of a score that can't be
+// practised yet.
+function playRange() {
+  if (section) return { start: section.start, end: section.end };
+  const score = scoreId && scores.get(scoreId);
+  return score && scoreEditProblem() ? { start: 0, end: Math.min(1, score.measures.length - 1) } : null;
+}
+
+// 내 악보: the section as written (key, rhythm, tempo) at the chosen speed, after the tonic and a pause when
+// `tonic` is set. Returns the playback length in seconds.
 function playSection(tonic) {
-  const { events, total } = Score.schedule(section.notes, { tonic });
+  const range = playRange();
+  const { events, total } = Playback.schedule(scores.get(scoreId), { ...range, tonic, speed: Settings.get('speed') });
   return Sound.playEvents(events, total);
 }
 
@@ -564,6 +583,11 @@ function playQuestion() {
 
 $('btn-question').addEventListener('click', () => {
   const seconds = playQuestion();
+  if (!current) {
+    // A score that can't be practised yet (until TODO 33) can be heard, but nothing opens for input.
+    $('btn-replay').disabled = false;
+    return;
+  }
   if (!$('btn-replay').disabled) return;
   setHint('listening');
   clearTimeout(unlockTimer);
@@ -633,6 +657,37 @@ $('score-select').addEventListener('change', (event) => {
   scoreId = event.target.value;
   sectionIndex = 0;
   newQuestion();
+});
+
+// ⚙ 설정 (내 악보): a small box under the button, not a browser dialog. Outside presses and Esc close it.
+function openSettings() {
+  for (const input of document.querySelectorAll('#settings input[name="speed"]')) {
+    input.checked = Number(input.value) === Settings.get('speed');
+  }
+  $('settings').hidden = false;
+  $('btn-settings').setAttribute('aria-expanded', 'true');
+  document.querySelector('#settings input:checked')?.focus();
+}
+
+function closeSettings(returnFocus = false) {
+  if ($('settings').hidden) return;
+  $('settings').hidden = true;
+  $('btn-settings').setAttribute('aria-expanded', 'false');
+  if (returnFocus) $('btn-settings').focus();
+}
+
+$('btn-settings').addEventListener('click', () => {
+  if ($('settings').hidden) openSettings();
+  else closeSettings();
+});
+$('settings').addEventListener('change', (event) => {
+  if (event.target.name === 'speed') Settings.set('speed', Number(event.target.value));
+});
+document.addEventListener('pointerdown', (event) => {
+  if (!event.target.closest('#settings, #btn-settings')) closeSettings();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') closeSettings(true);
 });
 
 for (const tab of document.querySelectorAll('.mode-tab')) {
