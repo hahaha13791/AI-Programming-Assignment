@@ -61,10 +61,12 @@
       return T.waitFor(() => !$('btn-replay').disabled, 60000);
     },
 
-    // Skips the playback wait when a test only cares about input.
+    // Skips the playback wait when a test only cares about input. Like the app, only the current mode's input
+    // (they share the erase buttons, so an unlocked input of another mode would fight over them).
     unlock() {
-      staff.setLocked(false);
-      rhythm.setLocked(false);
+      if (mode === 'rhythm') rhythm.setLocked(false);
+      else if (mode === 'score' && typeof scoreInput !== 'undefined') scoreInput.setLocked(false);
+      else staff.setLocked(false);
     },
 
     clickStep(step, container = $('staff-area')) {
@@ -90,13 +92,44 @@
       else (pressed === 1 ? sharp : flat).click();
     },
 
-    // notes: [{ step, accidental }] — e.g. `current` to enter the right answer.
+    // notes: [{ step, accidental }] — e.g. `current` to enter the right answer. In 내 악보, `current` is pitches
+    // ({ step: 'F', alter, octave }), entered on the score input; ♯♯/♭♭ go in as their enharmonic neighbour.
     enterNotes(notes, container = $('staff-area')) {
+      if (typeof mode !== 'undefined' && mode === 'score' && notes.length && typeof notes[0].step === 'string') {
+        for (const pitch of notes) T.enterPitch(pitch);
+        return;
+      }
       for (const note of notes) {
         T.setAccidental(note.accidental || 0);
         T.clickStep(note.step, container);
       }
       T.setAccidental(0);
+    },
+
+    enterPitch(pitch) {
+      const steps = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+      let p = pitch;
+      if (Math.abs(p.alter) === 2) {
+        const dir = Math.sign(p.alter);
+        const index = steps.indexOf(p.step) + dir;
+        const step = steps[(index + 7) % 7];
+        const octave = p.octave + (index < 0 ? -1 : index > 6 ? 1 : 0);
+        const alter = Notation.midi(p) - Notation.midi({ step, alter: 0, octave });
+        p = { step, alter, octave };
+      }
+      const toggle = scoreInput.toggleFor(p);
+      const set = (id, on) => {
+        const button = $(id);
+        if ((button.getAttribute('aria-pressed') === 'true') !== on) button.click();
+      };
+      set('score-sharp', toggle === 1);
+      set('score-flat', toggle === -1);
+      set('score-natural', toggle === 0);
+      const point = scoreInput.pointFor(p);
+      scoreInput.svg.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: point.x, clientY: point.y }));
+      set('score-sharp', false);
+      set('score-flat', false);
+      set('score-natural', false);
     },
 
     // Rhythm mode: types like ['q', 'q', 'h'], entered with the note buttons.

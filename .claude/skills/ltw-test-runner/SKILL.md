@@ -49,8 +49,8 @@ T.test('27-2 파일 선택 후 악보 목록에 추가', async (T) => {
 | `T.test(name, fn)` / `T.check(cond, msg)` | 테스트 등록 / PASS·FAIL 한 줄 기록. 예외가 나면 그 테스트는 FAIL로 기록되고 다음 테스트로 넘어간다 |
 | `T.setMode('melody'·'harmony'·'rhythm'·'score')`, `T.setLevel`, `T.setChordType('triad'·'seventh')` | 탭과 버튼을 실제로 클릭한다 |
 | `await T.listen()` | "문제 듣기"를 누르고 재생이 끝나 입력이 풀릴 때까지 기다린다 |
-| `T.unlock()` | 재생 없이 입력만 푼다(입력 동작만 볼 때) |
-| `T.enterNotes(notes, container?)` | `[{step, accidental}]`를 ♯/♭ 토글과 오선 클릭으로 입력한다. `current`를 넘기면 정답이 입력된다 |
+| `T.unlock()` | 재생 없이 현재 모드의 입력만 푼다(입력 동작만 볼 때) |
+| `T.enterNotes(notes, container?)` | `[{step, accidental}]`를 ♯/♭ 토글과 오선 클릭으로 입력한다. `current`를 넘기면 정답이 입력된다. 내 악보에서는 `current`가 음높이(`{step:'F', alter, octave}`)이고 새 받아 적기 오선(`scoreInput`)에 입력한다(`T.enterPitch`) |
 | `T.clickStep(step, container?)`, `T.hoverStep` | step(0 = C4 … 11 = G5) 위치를 클릭하거나 마우스를 올린다. 편집기 입력판은 `T.$('editor-pad')`를 넘긴다 |
 | `T.enterRhythm(['q','e','e','h'])`, `T.setTime(3)` | 리듬 음표 버튼과 박자표 버튼을 누른다 |
 | `T.submit()`, `T.next()`, `T.resultText()` | 제출, 다음 문제, 결과 영역 텍스트 |

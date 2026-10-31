@@ -310,6 +310,69 @@ button:focus-visible {
   height: 100%;
 }
 
+/* 내 악보 받아 적기: clef and key stay at the left, the notes and their solfège scroll sideways together. */
+.score-input {
+  display: flex;
+  align-items: flex-start;
+}
+
+.score-input-fixed {
+  flex: none;
+  display: block;
+}
+
+.score-input-scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.score-input-svg {
+  display: block;
+  cursor: pointer;
+}
+
+.score-input-svg.is-locked {
+  cursor: default;
+}
+
+.si-note .note-head {
+  fill: var(--text);
+}
+
+.si-note.is-ghost {
+  opacity: 0.35;
+}
+
+.si-note.is-correct .note-head,
+.si-label.is-correct {
+  fill: var(--correct);
+}
+
+.si-note.is-wrong .note-head,
+.si-label.is-wrong {
+  fill: var(--wrong);
+}
+
+.si-label {
+  font-size: 13px;
+  font-weight: 600;
+  text-anchor: middle;
+  fill: var(--text);
+}
+
+.si-empty {
+  fill: none;
+  stroke: var(--border);
+  stroke-dasharray: 3 3;
+}
+
+.si-empty.is-next {
+  stroke: var(--accent);
+}
+
 .score-strip {
   overflow-x: auto;
   overflow-y: hidden;

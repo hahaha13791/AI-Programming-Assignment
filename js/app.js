@@ -51,8 +51,6 @@ const MODES = {
       // Until practice works on v2 scores (TODO 33), scores beyond the expansion 4 range wait.
       pending: '이 악보는 곧 그려져요. 지금은 다른 악보로 연습해 주세요.',
       restOnly: '이 구간에는 음이 없어요. 다른 마디를 골라 보세요.',
-      // Until the input staff scrolls (TODO 32), it holds eight notes.
-      tooLong: '음이 8개 넘는 구간은 곧 받아 적을 수 있어요. 지금은 더 짧게 골라 보세요.',
     },
   },
 };
@@ -88,11 +86,13 @@ function setMode(next) {
   $('btn-tonic').hidden = info.tonic === false;
   $('btn-arpeggio').hidden = !info.arpeggio;
   const rhythm = mode === 'rhythm';
-  $('staff-area').hidden = rhythm;
-  $('accidentals').hidden = rhythm;
+  $('staff-area').hidden = rhythm || score;
+  $('accidentals').hidden = rhythm || score;
+  $('score-accidentals').hidden = !score;
+  if (!score) $('score-input').hidden = true;
   $('rhythm-area').hidden = !rhythm;
   $('rhythm-controls').hidden = !rhythm;
-  $('note-preview').hidden = rhythm;
+  $('note-preview').hidden = rhythm || score;
   $('rhythm-progress').hidden = !rhythm;
   newQuestion();
 }
@@ -342,13 +342,23 @@ function practiceSection() {
   const sel = selection(score);
   if (!score || !sel) return { section: null, reason: scoreId ? 'noNotes' : 'empty' };
   if (scoreEditProblem()) return { section: null, reason: 'pending' };
+  const measures = Notation.resolve(score);
+  // The pitches to write down: every sounding note once (a tied note once, where it starts).
+  const answer = measures.slice(sel.start, sel.end + 1).flatMap((m) => m.notes)
+    .filter((note) => !note.rest && note.tie !== 'stop' && note.tie !== 'both').map((note) => ({ ...note.pitch }));
+  if (!answer.length) return { section: null, reason: 'restOnly' };
+  const all = score.measures.flatMap((m) => m.notes).filter((note) => !note.rest).map((note) => note.pitch);
+  const byPitch = (a, b) => Notation.midi(a) - Notation.midi(b);
+  const sorted = [...all].sort(byPitch);
+  // Until results draw v2 (TODO 33), the answer section is drawn from the expansion 4 shape.
   const legacy = Notation.toLegacy(score);
-  const measures = Score.splitMeasures(legacy.notes, legacy.time);
-  const notes = measures.slice(sel.start, sel.end + 1).flat();
-  const pitched = notes.filter((note) => !Rhythm.TYPES[note.type].rest).length;
-  if (!pitched) return { section: null, reason: 'restOnly' };
-  if (pitched > 8) return { section: null, reason: 'tooLong' };
-  return { section: { start: sel.start, end: sel.end, notes, label: measureLabel(score, sel.start, sel.end), time: legacy.time } };
+  return {
+    section: {
+      start: sel.start, end: sel.end, answer, label: measureLabel(score, sel.start, sel.end),
+      clef: measures[sel.start].clef, key: measures[sel.start].key, range: [sorted[0], sorted[sorted.length - 1]],
+      notes: Score.splitMeasures(legacy.notes, legacy.time).slice(sel.start, sel.end + 1).flat(), time: legacy.time,
+    },
+  };
 }
 
 // The length chips and the strip, with the chosen measures highlighted and scrolled into view.
@@ -423,6 +433,17 @@ const staff = Staff.create({
   onChange: updateSubmit,
 });
 
+const scoreInput = ScoreInput.create({
+  container: $('score-input'),
+  sharpButton: $('score-sharp'),
+  flatButton: $('score-flat'),
+  naturalButton: $('score-natural'),
+  undoButton: $('btn-undo'),
+  clearButton: $('btn-clear'),
+  onChange: updateSubmit,
+});
+scoreInput.setStyle(Settings.get('solfege'));
+
 const rhythm = Rhythm.create({
   container: $('rhythm-area'),
   buttons: $('note-buttons'),
@@ -438,7 +459,8 @@ function updateSubmit() {
     $('btn-submit').disabled = true;
     return;
   }
-  $('btn-submit').disabled = mode === 'rhythm' ? !rhythm.canSubmit() : staff.getNotes().length !== current.length;
+  const entered = mode === 'score' ? scoreInput.getNotes() : staff.getNotes();
+  $('btn-submit').disabled = mode === 'rhythm' ? !rhythm.canSubmit() : entered.length !== current.length;
 }
 
 // A random item from the pool, never the same as the previous question.
@@ -453,10 +475,7 @@ function pick(pool, previous) {
 function showScorePreview(score) {
   const preview = $('score-preview');
   preview.hidden = !score;
-  if (mode !== 'rhythm') {
-    $('staff-area').hidden = Boolean(score);
-    $('note-preview').hidden = Boolean(score);
-  }
+  if (score) $('score-input').hidden = true;
   if (score) Sheet.draw(preview, score, { label: `악보 미리 보기, ${score.title}` });
   else preview.replaceChildren();
 }
@@ -490,9 +509,11 @@ function newQuestion() {
     section = practice.section;
     scoreReason = practice.reason ?? null;
     // Only the pitches are written down; rests and lengths are heard, not entered.
-    current = section ? section.notes.filter((note) => !Rhythm.TYPES[note.type].rest)
-      .map(({ step, accidental }) => ({ step, accidental })) : null;
-    staff.reset(current ? current.length : 0, { topStep: HARMONY_TOP_STEP });
+    current = section ? section.answer : null;
+    staff.reset(0);
+    scoreInput.setLocked(true);
+    if (section) scoreInput.reset({ clef: section.clef, key: section.key, range: section.range, capacity: current.length });
+    $('score-input').hidden = !section;
     renderStrip();
     renderScoreNotice();
     updateEditButton();
@@ -514,12 +535,17 @@ function element(tag, className, text) {
   return node;
 }
 
-function chipsOf(notes, marks) {
+// 내 악보 names its pitches in the chosen solfège style, from the section's key.
+function scoreLabel(pitch) {
+  return ScoreInput.label(pitch, section.key, Settings.get('solfege'));
+}
+
+function chipsOf(notes, marks, name = Staff.noteLabel) {
   const chips = element('div', 'note-preview answer-chips');
   chips.append(...notes.map((note, i) => {
     const mark = marks?.[i];
     const markClass = mark === true ? 'is-correct' : mark === 'missed' ? 'is-missed' : '';
-    return element('span', `note-chip ${markClass}`.trim(), Staff.noteLabel(note));
+    return element('span', `note-chip ${markClass}`.trim(), name(note));
   }));
   return chips;
 }
@@ -577,13 +603,14 @@ function renderResult(result) {
       // The section as written, rhythm included: the notes were heard in it.
       parts.push(element('h3', 'answer-title', `정답 구간 (${section.label})`));
       Score.draw(answerStaff, { time: section.time, notes: section.notes }, {
-        label: `정답 구간 악보, ${section.label}. ${current.map(Staff.noteLabel).join(' ')}`,
+        label: `정답 구간 악보, ${section.label}. ${current.map(scoreLabel).join(' ')}`,
       });
+      parts.push(answerStaff, chipsOf(current, null, scoreLabel));
     } else {
       parts.push(element('h3', 'answer-title', '정답 멜로디'));
       Staff.draw(answerStaff, current, '정답 멜로디 오선');
+      parts.push(answerStaff, chipsOf(current));
     }
-    parts.push(answerStaff, chipsOf(current));
   }
 
   area.replaceChildren(...parts, nextButton());
@@ -602,6 +629,11 @@ function nextButton() {
 }
 
 // Melody: note by note in order. Enharmonic spellings count as the same pitch.
+// 내 악보: note by note in order, by sounding pitch (enharmonic spellings count as the same).
+function gradeScore(input) {
+  return { marks: current.map((pitch, i) => Boolean(input[i]) && Notation.midi(pitch) === Notation.midi(input[i])) };
+}
+
 function gradeMelody(input) {
   return { marks: current.map((note, i) => Staff.noteToMidi(note) === Staff.noteToMidi(input[i])) };
 }
@@ -696,6 +728,7 @@ $('btn-question').addEventListener('click', () => {
     $('btn-arpeggio').disabled = false;
     setHint('input');
     if (mode === 'rhythm') rhythm.setLocked(false);
+    else if (mode === 'score') scoreInput.setLocked(false);
     else staff.setLocked(false);
   }, seconds * 1000);
 });
@@ -715,6 +748,16 @@ $('btn-submit').addEventListener('click', () => {
     setHint('submitted');
     rhythm.setLocked(true);
     rhythm.setMarks(result.inputMarks);
+    renderResult(result);
+    updateSubmit();
+    return;
+  }
+  if (mode === 'score') {
+    const result = gradeScore(scoreInput.getNotes());
+    submitted = true;
+    setHint('submitted');
+    scoreInput.setLocked(true);
+    scoreInput.setMarks(result.marks);
     renderResult(result);
     updateSubmit();
     return;
@@ -764,6 +807,9 @@ function openSettings() {
   for (const input of document.querySelectorAll('#settings input[name="speed"]')) {
     input.checked = Number(input.value) === Settings.get('speed');
   }
+  for (const input of document.querySelectorAll('#settings input[name="solfege"]')) {
+    input.checked = input.value === Settings.get('solfege');
+  }
   $('settings').hidden = false;
   $('btn-settings').setAttribute('aria-expanded', 'true');
   document.querySelector('#settings input:checked')?.focus();
@@ -782,6 +828,10 @@ $('btn-settings').addEventListener('click', () => {
 });
 $('settings').addEventListener('change', (event) => {
   if (event.target.name === 'speed') Settings.set('speed', Number(event.target.value));
+  if (event.target.name === 'solfege') {
+    Settings.set('solfege', event.target.value);
+    scoreInput.setStyle(event.target.value);
+  }
 });
 document.addEventListener('pointerdown', (event) => {
   if (!event.target.closest('#settings, #btn-settings')) closeSettings();

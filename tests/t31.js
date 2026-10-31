@@ -73,7 +73,7 @@ T.test('31-4 길이 칩과 마디 누르기', async (T) => {
   T.check(stopped > 0 && T.$('btn-replay').disabled, '재생 중이면 멈추고 새 문제가 됨');
   Sound.stop = stop;
   chip(4).click();
-  T.check(section === null && T.$('staff-hint').textContent.includes('8개'), '4마디로 늘리면 5~8마디(14음): 32단계 전까지는 안내');
+  T.check(section && section.label === '5~8마디' && current.length === 14, '4마디로 늘리면 5~8마디 (14음, 32단계부터 개수 제한 없음)');
   T.check(JSON.stringify(highlighted()) === '[4,5,6,7]', '5~8마디가 강조');
   chip(2).click();
   pressMeasure(10);

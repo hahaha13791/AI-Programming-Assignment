@@ -1,9 +1,9 @@
 (function () {
-  // Settings kept in this browser (내 악보: playback speed, later the solfège style). Reading or writing can fail
+  // Settings kept in this browser (내 악보: playback speed and solfège style). Reading or writing can fail
   // (privacy settings): the defaults are used then and nothing breaks.
   const STORAGE_KEY = 'ltw.settings.v1';
-  const DEFAULTS = { speed: 1 };
-  const ALLOWED = { speed: [1, 0.75, 0.5] };
+  const DEFAULTS = { speed: 1, solfege: 'movable' };
+  const ALLOWED = { speed: [1, 0.75, 0.5], solfege: ['movable', 'fixed'] };
 
   function readAll() {
     try {

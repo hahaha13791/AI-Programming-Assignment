@@ -37,6 +37,11 @@
             <label><input type="radio" name="speed" value="0.75"> 느리게 (75%)</label>
             <label><input type="radio" name="speed" value="0.5"> 아주 느리게 (50%)</label>
           </fieldset>
+          <fieldset class="settings-group">
+            <legend>계이름</legend>
+            <label><input type="radio" name="solfege" value="movable"> 이동도 (으뜸음 = 도·라)</label>
+            <label><input type="radio" name="solfege" value="fixed"> 고정도 (C = 도)</label>
+          </fieldset>
         </div>
       </div>
       <div class="level-area">
@@ -119,6 +124,7 @@
       <div class="staff-area" id="staff-area"></div>
       <!-- Until 33: a v2 score that can't be practised yet is shown whole here, to check how it is drawn. -->
       <div class="staff-area score-area score-preview" id="score-preview" hidden></div>
+      <div class="staff-area score-input-area" id="score-input" hidden></div>
       <div class="staff-area rhythm-area" id="rhythm-area" hidden></div>
       <div class="note-preview" id="note-preview" aria-live="polite"></div>
       <p class="note-preview rhythm-progress" id="rhythm-progress" aria-live="polite" hidden></p>
@@ -126,6 +132,12 @@
         <div class="accidentals" id="accidentals" role="group" aria-label="임시표">
           <button type="button" class="btn-toggle" id="btn-sharp" aria-pressed="false" aria-label="샵(#)">♯&#xFE0E;</button>
           <button type="button" class="btn-toggle" id="btn-flat" aria-pressed="false" aria-label="플랫(♭)">♭&#xFE0E;</button>
+        </div>
+        <!-- 내 악보: ♯/♭/♮ instead of the key signature's accidental. -->
+        <div class="accidentals" id="score-accidentals" role="group" aria-label="임시표" hidden>
+          <button type="button" class="btn-toggle" id="score-sharp" aria-pressed="false" aria-label="샵(#)">♯&#xFE0E;</button>
+          <button type="button" class="btn-toggle" id="score-flat" aria-pressed="false" aria-label="플랫(♭)">♭&#xFE0E;</button>
+          <button type="button" class="btn-toggle" id="score-natural" aria-pressed="false" aria-label="제자리표(♮)">♮&#xFE0E;</button>
         </div>
         <div class="rhythm-controls" id="rhythm-controls" hidden>
           <div class="time-signatures" id="time-signatures" role="radiogroup" aria-label="박자표" hidden></div>
@@ -158,6 +170,7 @@
   <script src="js/scores.js"></script>
   <script src="js/score.js"></script>
   <script src="js/sheet.js"></script>
+  <script src="js/score-input.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

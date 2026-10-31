@@ -85,7 +85,7 @@ T.test('28-2 잠긴 새 예시의 악보 미리 보기 (28-1a)', async (T) => {
   }
   select.value = 'example-twinkle';
   select.dispatchEvent(new Event('change'));
-  T.check(T.$('score-preview').hidden && !T.$('staff-area').hidden, '연습할 수 있는 악보로 돌아오면 미리 보기가 사라지고 입력 오선이 보임');
+  T.check(T.$('score-preview').hidden && !T.$('score-input').hidden, '연습할 수 있는 악보로 돌아오면 미리 보기가 사라지고 받아 적기 오선이 보임');
   T.setMode('melody');
   T.check(T.$('score-preview').hidden && !T.$('staff-area').hidden, '다른 모드에서는 미리 보기가 없음');
 });
