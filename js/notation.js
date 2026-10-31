@@ -2,7 +2,8 @@
   // The score format (v2): an original score as written, in MusicXML's terms so an import can move it over
   // unchanged. Nothing here bends a score to fit the app.
   //
-  // score   = { id, title, pickup (first measure shorter than its time), measures: [measure, ...] }
+  // score   = { id, title, pickup (first measure shorter than its time), measures: [measure, ...],
+//             firstNumber (optional: the first measure's printed number when it isn't the usual 1, or 0 for a pickup) }
   // measure = { notes: [note, ...], and only where they change (all of them in the first measure):
   //             time: [beats, beatType], key: { fifths: -7..7, mode: 'major'|'minor' }, clef: 'treble'|'bass',
   //             tempo: quarter notes per minute }
@@ -18,7 +19,9 @@
   const CLEFS = ['treble', 'bass'];
   const MODES = ['major', 'minor'];
   const BEAT_TYPES = [1, 2, 4, 8, 16, 32];
-  const MAX_TITLE = 30;
+  // Titles from imported files can be long (the editor still takes 30 characters, Scores.MAX_TITLE).
+  const MAX_TITLE = 100;
+  const TEMPO_RANGE = [5, 1000];
 
   // ---- fractions ----
   function gcd(a, b) {
@@ -103,7 +106,7 @@
     }
     if (has('key') && !(measure.key && isInt(measure.key.fifths, -7, 7) && MODES.includes(measure.key.mode))) return false;
     if (has('clef') && !CLEFS.includes(measure.clef)) return false;
-    if (has('tempo') && !(typeof measure.tempo === 'number' && measure.tempo >= 20 && measure.tempo <= 400)) return false;
+    if (has('tempo') && !(typeof measure.tempo === 'number' && measure.tempo >= TEMPO_RANGE[0] && measure.tempo <= TEMPO_RANGE[1])) return false;
     return true;
   }
 
@@ -146,6 +149,7 @@
     if (typeof score.id !== 'string' || !score.id) return false;
     if (typeof score.title !== 'string' || !score.title.trim() || score.title.length > MAX_TITLE) return false;
     if (typeof score.pickup !== 'boolean') return false;
+    if (score.firstNumber !== undefined && !isInt(score.firstNumber, 0, 99999)) return false;
     if (!Array.isArray(score.measures) || !score.measures.length) return false;
     for (let i = 0; i < score.measures.length; i++) {
       const measure = score.measures[i];
@@ -176,20 +180,22 @@
       if (n.tupletStop) out.tupletStop = true;
       return out;
     };
-    return {
+    const out = {
       id: score.id,
       title: score.title.trim().slice(0, MAX_TITLE),
       pickup: score.pickup,
-      measures: score.measures.map((m) => {
-        const out = {};
-        if (m.time) out.time = [m.time[0], m.time[1]];
-        if (m.key) out.key = { fifths: m.key.fifths, mode: m.key.mode };
-        if (m.clef) out.clef = m.clef;
-        if (m.tempo !== undefined) out.tempo = m.tempo;
-        out.notes = m.notes.map(note);
-        return out;
-      }),
     };
+    if (score.firstNumber !== undefined) out.firstNumber = score.firstNumber;
+    out.measures = score.measures.map((m) => {
+      const measure = {};
+      if (m.time) measure.time = [m.time[0], m.time[1]];
+      if (m.key) measure.key = { fifths: m.key.fifths, mode: m.key.mode };
+      if (m.clef) measure.clef = m.clef;
+      if (m.tempo !== undefined) measure.tempo = m.tempo;
+      measure.notes = m.notes.map(note);
+      return measure;
+    });
+    return out;
   }
 
   // Measures start..end as a score of their own, for drawing a section: its first measure carries the clef, key,
@@ -246,6 +252,7 @@
   // Why the editor can't take this score, or null if it can. The first reason found, for the notice.
   function legacyProblem(score) {
     if (score.pickup) return '못갖춘마디';
+    if (score.firstNumber !== undefined && score.firstNumber !== 1) return '마디 번호';
     if (score.measures.length > LEGACY_MAX_MEASURES) return `${LEGACY_MAX_MEASURES + 1}마디 이상`;
     const measures = resolve(score);
     const first = measures[0];
@@ -348,7 +355,7 @@
   }
 
   window.Notation = {
-    TYPES, STEPS, MAX_TITLE,
+    TYPES, STEPS, SEMITONES, MAX_TITLE, TEMPO_RANGE,
     frac, add, sub, mul, cmp, toNumber, ZERO,
     duration, midi, measureLength, filled, resolve,
     isValid, clean, excerpt,

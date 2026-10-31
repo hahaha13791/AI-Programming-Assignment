@@ -632,9 +632,14 @@ button:focus-visible {
   cursor: not-allowed;
 }
 
+/* At most two lines, so the title row keeps its height (the whole text is in the tooltip). */
 .score-notice {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
   margin: 0 0 0 auto;
-  max-width: 62%;
+  max-width: calc(100% - 5.5rem);
   font-size: 0.75rem;
   line-height: 1.2;
   color: var(--missed);

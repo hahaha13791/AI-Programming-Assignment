@@ -1,7 +1,9 @@
 // 공개 MusicXML 예제(tests/samples/make_fixture.py로 만든 fixture)를 앱으로 읽는 확인. fixture를 먼저 붙여 돌린다.
+// 기대값(목록, 울리는 음)은 make_fixture.py가 앱과 따로 계산한다.
 const ticker = setInterval(() => {}, 10);
 const bytesOf = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-T.test('공개 예제 18곡 읽기', async (T) => {
+
+T.test('35 공개 예제 18곡 읽기', async (T) => {
   T.setMode('score');
   const byBase = {};
   for (const s of window.SAMPLES) {
@@ -18,5 +20,55 @@ T.test('공개 예제 18곡 읽기', async (T) => {
     if (byBase[base]) T.check(byBase[base] === sig, `${base}: .musicxml과 .mxl 결과가 같음`);
     else byBase[base] = sig;
   }
+});
+
+// What a converted score sounds: [MIDI@start+length] with tied notes joined, from the start of the score.
+function soundsOf(score) {
+  const N = Notation;
+  const out = [];
+  let at = N.ZERO;
+  for (const measure of N.resolve(score)) {
+    for (const note of measure.notes) {
+      const length = N.duration(note);
+      if (!note.rest) {
+        if (note.tie === 'stop' || note.tie === 'both') out[out.length - 1].length = N.add(out[out.length - 1].length, length);
+        else out.push({ midi: N.midi(note.pitch), start: at, length });
+      }
+      at = N.add(at, length);
+    }
+  }
+  return out.map((s) => `${s.midi}@${s.start[0]}/${s.start[1]}+${s.length[0]}/${s.length[1]}`);
+}
+
+T.test('36 공개 예제 성부 변환', async (T) => {
+  const reasons = {};
+  let converted = 0;
+  let lines = 0;
+  for (const s of window.SAMPLES.filter((x) => x.exp)) {
+    const doc = new DOMParser().parseFromString(MusicXML.decode(bytesOf(s.b64)), 'application/xml');
+    const state = MusicXML.candidates(doc, s.name);
+    state.parts.forEach((part, p) => part.lines.forEach((line, l) => {
+      lines++;
+      const where = `${s.name} ${part.name} ${line.label}`;
+      let result = null;
+      try {
+        result = MusicXML.convert(doc, p, l, s.name);
+      } catch (error) {
+        const known = error instanceof MusicXML.ImportError && /^(아직 담지 못해요|불러올 수 없어요)\(/.test(error.message);
+        T.check(known, `${where}: 이유가 있는 거절 (${error.message})`);
+        reasons[error.message] = (reasons[error.message] ?? 0) + 1;
+        return;
+      }
+      converted++;
+      const valid = Notation.isValid({ ...result.score, id: 'x' });
+      const got = soundsOf(result.score);
+      const expected = s.exp.sounds[p][l];
+      const same = JSON.stringify(got) === JSON.stringify(expected);
+      const firstDiff = got.findIndex((x, i) => x !== expected[i]);
+      T.check(valid && same, `${where}: 검증 통과, 울리는 음 ${got.length}개가 Python 계산과 같음${same ? '' : ` (다른 곳 ${firstDiff}: ${got[firstDiff]} ≠ ${expected[firstDiff]}, 개수 ${got.length}/${expected.length})`}${result.notices.length ? ` · 알림: ${result.notices.join(' · ')}` : ''}`);
+    }));
+  }
+  T.check(converted > 0, `불러온 성부 ${converted} / 전체 ${lines} · 거절 이유: ${Object.entries(reasons).map(([k, v]) => `${k} ${v}`).join(', ')}`);
+  T.setMode('melody');
   clearInterval(ticker);
 });

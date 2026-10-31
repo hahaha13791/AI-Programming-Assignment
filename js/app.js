@@ -131,9 +131,12 @@ function scoreEditProblem() {
 // The storage notice comes first; otherwise why 편집 is off for this score.
 function renderScoreNotice() {
   const problem = scoreEditProblem();
-  const notice = mode === 'score' ? scores.notice() ?? (problem && `편집기 밖 표기(${problem})가 있어 편집할 수 없어요`) : null;
+  const notice = mode === 'score'
+    ? scores.notice() ?? importNotice ?? (problem && `편집기 밖 표기(${problem})가 있어 편집할 수 없어요`)
+    : null;
   $('score-notice').hidden = !notice;
   $('score-notice').textContent = notice ?? '';
+  $('score-notice').title = notice ?? '';
 }
 
 function renderScorePicker() {
@@ -215,7 +218,8 @@ function resetDelete() {
 
 // [새 악보]: a small box like ⚙'s — 직접 만들기 (the editor) or 파일 불러오기 (MusicXML, PRD #4-G). Outside presses
 // and Esc close it.
-let importState = null; // the file read last: { title, parts, skipped }, or null
+let importState = null; // the file read last: { title, parts, skipped, doc, fileName }, or null
+let importNotice = null; // what the last import changed or left out, shown until another score is chosen
 let importRun = 0; // the newest file read wins if two overlap
 
 function openNewScore() {
@@ -271,9 +275,42 @@ function renderImport(fileName, status, isError = false) {
   const skipped = importState?.skipped ?? [];
   $('import-skipped').hidden = !skipped.length;
   $('import-skipped').textContent = skipped.length ? `음높이가 없는 파트 ${skipped.length}개(${skipped.join(', ')})는 뺐어요.` : '';
-  // Until TODO 36 the parts can be looked at but not brought in yet.
-  $('import-pending').hidden = !importState;
-  $('btn-import').disabled = true;
+  $('btn-import').disabled = !importState;
+}
+
+function chosenImportLine() {
+  const part = chosenImportPart();
+  if (!part) return null;
+  const input = document.querySelector('#import-lines input:checked');
+  return { partIndex: importState.parts.indexOf(part), lineIndex: input ? Number(input.value) : 0 };
+}
+
+// Moves the chosen line over unchanged, stores it and practises it from its first measures (PRD #4-G-2, #4-G-3).
+// Returns the saved score's id, or null with the reason shown in the box.
+function importChosen() {
+  const choice = chosenImportLine();
+  if (!choice) return null;
+  let result;
+  try {
+    result = MusicXML.convert(importState.doc, choice.partIndex, choice.lineIndex, importState.fileName);
+  } catch (caught) {
+    const message = caught instanceof MusicXML.ImportError ? caught.message : '악보를 옮기지 못했어요.';
+    $('import-status').textContent = message;
+    $('import-status').classList.add('is-error');
+    return null;
+  }
+  const saved = scores.save({ ...result.score, id: undefined });
+  if (!saved) {
+    $('import-status').textContent = '악보를 옮기지 못했어요.';
+    $('import-status').classList.add('is-error');
+    return null;
+  }
+  scoreId = saved.id;
+  Settings.setSection(saved.id, null);
+  importNotice = result.notices.length ? result.notices.join(' · ') : null;
+  closeNewScore();
+  backToPractice();
+  return saved.id;
 }
 
 // Reads a MusicXML file and lists its parts (PRD #4-G-1, #4-G-2). Nothing is stored. Returns the list or null.
@@ -285,7 +322,7 @@ async function importFile(file) {
   let error = null;
   try {
     const { doc, fileName } = await MusicXML.read(file);
-    state = MusicXML.candidates(doc, fileName);
+    state = { ...MusicXML.candidates(doc, fileName), doc, fileName };
   } catch (caught) {
     error = caught instanceof MusicXML.ImportError ? caught.message : MusicXML.MESSAGES.notXml;
   }
@@ -312,6 +349,7 @@ $('import-file').addEventListener('change', (event) => {
   if (file) importFile(file);
 });
 $('import-parts').addEventListener('change', renderImportLines);
+$('btn-import').addEventListener('click', importChosen);
 // A score the editor can't take yet (TODO 27-5) can still be deleted: 편집 turns into 삭제, confirmed by a second press
 // like the editor's.
 // The picker row is narrow on phones, so its confirm label is short; the screen-reader name says the whole thing.
@@ -346,6 +384,7 @@ $('btn-edit-score').addEventListener('click', () => {
   }
   scores.remove(scoreId);
   scoreId = scores.list()[0]?.id ?? null;
+  importNotice = null;
   backToPractice();
 });
 $('editor-cancel').addEventListener('click', backToPractice);
@@ -370,6 +409,7 @@ $('editor-delete').addEventListener('click', () => {
   scores.remove(editingId);
   if (scoreId === editingId) {
     scoreId = scores.list()[0]?.id ?? null;
+    importNotice = null;
   }
   backToPractice();
 });
@@ -886,6 +926,8 @@ $('score-strip').addEventListener('wheel', (event) => {
 
 $('score-select').addEventListener('change', (event) => {
   scoreId = event.target.value;
+  importNotice = null;
+  renderScoreNotice();
   pendingStart = null;
   newQuestion();
 });

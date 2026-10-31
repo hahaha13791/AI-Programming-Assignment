@@ -134,5 +134,422 @@
     return { title: titleOf(doc, fileName), parts, skipped };
   }
 
-  window.MusicXML = { read, decode, candidates, ImportError, MESSAGES };
+  // ---- one line → a v2 score (PRD #4-G-3) ----
+  // Nothing is bent to fit: what the format can't hold yet (TODO 37~40) or at all is refused with the reason.
+  const N = Notation;
+  const ZERO = N.ZERO;
+  const later = (what) => new ImportError(`아직 담지 못해요(${what}).`);
+  const never = (what) => new ImportError(`불러올 수 없어요(${what}).`);
+  const NOTE_TYPES = ['whole', 'half', 'quarter', 'eighth', '16th', '32nd'];
+  const LATER_TYPES = {
+    '64th': '64분음표', '128th': '128분음표', '256th': '256분음표', '512th': '512분음표', '1024th': '1024분음표',
+    breve: '겹온음표', long: '롱가', maxima: '맥시마',
+  };
+  const DEFAULT_TEMPO = 120; // MusicXML's default when a score gives none
+  const maxOf = (a, b) => (N.cmp(a, b) >= 0 ? a : b);
+  const childrenOf = (element, name) => [...element.children].filter((c) => c.nodeName === name);
+  const childOf = (element, name) => childrenOf(element, name)[0] ?? null;
+
+  // a / b as a fraction, for MusicXML numbers that may have decimals.
+  function ratio(a, b) {
+    const scale = Number.isInteger(a) && Number.isInteger(b) ? 1 : 1e6;
+    return N.frac(Math.round(a * scale), Math.round(b * scale));
+  }
+
+  // A part measure by measure: each child with its start (a fraction of a whole note from the measure's start),
+  // and the measure's length as written (where its furthest voice ends).
+  function walkPart(part) {
+    let divisions = 1;
+    return childrenOf(part, 'measure').map((measure) => {
+      let cursor = ZERO;
+      let previous = ZERO; // where the last non-chord note started
+      let length = ZERO;
+      const items = [];
+      const lengthOf = (element) => ratio(Number(childText(element, 'duration')) || 0, 4 * divisions);
+      for (const element of measure.children) {
+        switch (element.nodeName) {
+          case 'attributes': {
+            const value = Number(childText(element, 'divisions'));
+            if (value > 0) divisions = value;
+            items.push({ element, kind: 'attributes', start: cursor });
+            break;
+          }
+          case 'note': {
+            const grace = hasChild(element, 'grace');
+            const chord = hasChild(element, 'chord');
+            const duration = grace ? ZERO : lengthOf(element);
+            const start = chord ? previous : cursor;
+            items.push({ element, kind: 'note', start, duration, grace, chord });
+            if (!chord) {
+              previous = cursor;
+              cursor = N.add(cursor, duration);
+            }
+            break;
+          }
+          case 'backup':
+            cursor = N.sub(cursor, lengthOf(element));
+            if (N.cmp(cursor, ZERO) < 0) cursor = ZERO;
+            break;
+          case 'forward':
+            cursor = N.add(cursor, lengthOf(element));
+            break;
+          case 'direction': {
+            const offset = Number(childText(element, 'offset')) || 0;
+            items.push({ element, kind: 'direction', start: N.add(cursor, ratio(offset, 4 * divisions)) });
+            break;
+          }
+          case 'sound':
+          case 'barline':
+            items.push({ element, kind: element.nodeName, start: cursor });
+            break;
+          default:
+        }
+        length = maxOf(length, cursor);
+      }
+      return { items, length, number: measure.getAttribute('number') ?? '' };
+    });
+  }
+
+  const REPEAT_WORDS = /\b(D\.?\s?C\.?|D\.?\s?S\.?|Da\s+Capo|Dal\s+Segno|Fine|Coda|Segno)\b/i;
+  const REPEAT_SOUNDS = ['dacapo', 'dalsegno', 'fine', 'tocoda', 'segno', 'coda', 'forward-repeat'];
+
+  function hasRepeats(doc) {
+    if (doc.querySelector('repeat, ending, segno, coda')) return true;
+    if ([...doc.getElementsByTagName('sound')].some((sound) => REPEAT_SOUNDS.some((name) => sound.hasAttribute(name)))) return true;
+    return [...doc.getElementsByTagName('words')].some((words) => REPEAT_WORDS.test(words.textContent));
+  }
+
+  // Quarter notes per minute from a direction or sound: <sound tempo>, else a plain <metronome> (a dotted beat
+  // unit converted: ♩. = 60 → 90). null if it gives none.
+  function tempoOf(element) {
+    const sound = element.nodeName === 'sound' ? element : element.querySelector('sound');
+    const fromSound = Number(sound?.getAttribute('tempo'));
+    if (fromSound > 0) return fromSound;
+    const metronome = element.nodeName === 'direction' ? element.querySelector('direction-type > metronome') : null;
+    if (!metronome) return null;
+    const units = childrenOf(metronome, 'beat-unit');
+    const perMinute = Number(childText(metronome, 'per-minute'));
+    if (units.length !== 1 || !(perMinute > 0)) return null;
+    const type = units[0].textContent.trim();
+    if (!NOTE_TYPES.includes(type)) return null;
+    return perMinute * N.toNumber(N.duration({ type, dots: childrenOf(metronome, 'beat-unit-dot').length })) * 4;
+  }
+
+  // The score's tempo at the start of each measure, from every part's directions. One written at a measure's very
+  // end starts the next measure; a change inside a measure waits for TODO 37.
+  function tempoMap(walked, count) {
+    const changes = [];
+    for (const measures of walked) {
+      measures.forEach((m, i) => {
+        for (const item of m.items) {
+          if (item.kind !== 'direction' && item.kind !== 'sound') continue;
+          const tempo = tempoOf(item.element);
+          if (tempo === null) continue;
+          const atEnd = N.cmp(m.length, ZERO) > 0 && N.cmp(item.start, m.length) >= 0;
+          changes.push(atEnd ? { index: i + 1, offset: ZERO, tempo } : { index: i, offset: item.start, tempo });
+        }
+      });
+    }
+    const tempos = new Array(count).fill(undefined);
+    let current;
+    for (let i = 0; i < count; i++) {
+      const here = changes.filter((c) => c.index === i);
+      const atStart = here.find((c) => N.cmp(c.offset, ZERO) === 0);
+      if (atStart) tempos[i] = atStart.tempo;
+      const inForce = tempos[i] ?? current;
+      if (here.some((c) => N.cmp(c.offset, ZERO) > 0 && c.tempo !== inForce)) throw later('마디 중간 빠르기 바뀜');
+      current = inForce;
+    }
+    return tempos;
+  }
+
+  // A pitch moved by an interval of diatonic steps and semitones (a transposing part to concert pitch).
+  function transpose(pitch, interval) {
+    if (!interval) return pitch;
+    const index = N.STEPS.indexOf(pitch.step) + 7 * pitch.octave + interval.diatonic;
+    const step = N.STEPS[((index % 7) + 7) % 7];
+    const octave = Math.floor(index / 7);
+    const alter = N.midi(pitch) + interval.chromatic - N.midi({ step, alter: 0, octave });
+    if (Math.abs(alter) > 2) throw never('실음으로 옮기면 세 겹 임시표가 되는 음');
+    return { step, alter, octave };
+  }
+
+  // Key signatures by their major tonic: C 0, G 1, … F -1. A signature moves with its tonic.
+  const MAJOR_FIFTHS = { C: 0, D: 2, E: 4, F: -1, G: 1, A: 3, B: 5 };
+  function transposeKey(key, interval) {
+    if (!interval) return key;
+    const step = N.STEPS[(((key.fifths * 4) % 7) + 7) % 7];
+    const tonic = { step, alter: (key.fifths - MAJOR_FIFTHS[step]) / 7, octave: 4 };
+    const moved = transpose(tonic, interval);
+    const fifths = MAJOR_FIFTHS[moved.step] + 7 * moved.alter;
+    if (fifths < -7 || fifths > 7) throw never('실음 조표가 ♯·♭ 7개를 넘음');
+    return { fifths, mode: key.mode };
+  }
+
+  const MODES = { major: 'major', ionian: 'major', minor: 'minor', aeolian: 'minor', none: 'major' };
+
+  function keyOf(element, notices) {
+    if (hasChild(element, 'key-step')) throw never('특수한 조표');
+    const fifths = Number(childText(element, 'fifths'));
+    if (!Number.isInteger(fifths) || fifths < -7 || fifths > 7) throw never('조표');
+    const name = (childText(element, 'mode') || 'major').toLowerCase();
+    if (!MODES[name]) notices.add('선법(도리아 등)은 장조로 보았어요');
+    return { fifths, mode: MODES[name] ?? 'major' };
+  }
+
+  function timeOf(element) {
+    if (hasChild(element, 'senza-misura')) throw never('무박자');
+    const beats = childrenOf(element, 'beats');
+    const types = childrenOf(element, 'beat-type');
+    if (beats.length !== 1 || types.length !== 1 || /\D/.test(beats[0].textContent.trim())) throw never('혼합 박자');
+    const time = [Number(beats[0].textContent), Number(types[0].textContent)];
+    if (!(time[0] >= 1 && time[0] <= 32) || ![1, 2, 4, 8, 16, 32].includes(time[1])) throw never(`박자 ${time.join('/')}`);
+    return time;
+  }
+
+  function clefOf(element) {
+    const sign = (childText(element, 'sign') || '').toUpperCase();
+    const line = Number(childText(element, 'line')) || ({ G: 2, F: 4, C: 3 })[sign];
+    const octave = Number(childText(element, 'clef-octave-change')) || 0;
+    if (sign === 'TAB') throw never('TAB 보표');
+    if (sign === 'PERCUSSION' || sign === 'NONE') throw never('음높이 없는 보표');
+    if (octave) throw later('옥타브 음자리표');
+    if (sign === 'G' && line === 2) return 'treble';
+    if (sign === 'F' && line === 4) return 'bass';
+    if (sign === 'C' && line === 3) throw later('알토 음자리표');
+    if (sign === 'C' && line === 4) throw later('테너 음자리표');
+    throw never(`음자리표 ${sign}${line}`);
+  }
+
+  // Rests that fill a gap (a voice silent for a while, a measure rest), largest first.
+  const REST_SIZES = NOTE_TYPES.flatMap((type) => [1, 0].map((dots) => ({ type, dots, length: N.duration({ type, dots }) })))
+    .sort((a, b) => N.cmp(b.length, a.length));
+  function restsFor(length) {
+    const rests = [];
+    let left = length;
+    while (N.cmp(left, ZERO) > 0) {
+      const size = REST_SIZES.find((r) => N.cmp(r.length, left) <= 0);
+      if (!size) throw later('쉼표로 채울 수 없는 빈 자리');
+      rests.push({ type: size.type, dots: size.dots, rest: true });
+      left = N.sub(left, size.length);
+    }
+    return rests;
+  }
+
+  // One MusicXML note of the chosen line → a v2 note, with its file tie and tuplet marks kept for the passes after.
+  function noteOf(element, length, interval) {
+    if (hasChild(element, 'cue')) throw later('작은 음표(cue)');
+    if (hasChild(element, 'unpitched')) throw never('음높이 없는 음');
+    let type = childText(element, 'type');
+    let dots = childrenOf(element, 'dot').length;
+    const modification = childOf(element, 'time-modification');
+    const actual = modification ? Number(childText(modification, 'actual-notes')) : 0;
+    const normal = modification ? Number(childText(modification, 'normal-notes')) : 0;
+    const tuplet = actual && normal && actual !== normal ? { actual, normal } : null;
+    if (type && LATER_TYPES[type]) throw later(LATER_TYPES[type]);
+    if (!type) {
+      // No written type: the type and dots whose length matches.
+      const found = REST_SIZES.find((size) => N.cmp(tuplet ? N.mul(size.length, N.frac(normal, actual)) : size.length, length) === 0);
+      if (!found) throw never('길이를 알 수 없는 음');
+      ({ type, dots } = found);
+    }
+    if (!NOTE_TYPES.includes(type)) throw never(`음표 길이 ${type}`);
+    if (dots > 2) throw never('점 세 개');
+    const note = { type, dots };
+    if (tuplet) note.tuplet = tuplet;
+    if (N.cmp(N.duration(note), length) !== 0) throw never('음 길이가 표기와 맞지 않음');
+    if (hasChild(element, 'rest')) {
+      note.rest = true;
+    } else {
+      const pitch = childOf(element, 'pitch');
+      const alter = Number(childText(pitch, 'alter') || 0);
+      if (!Number.isInteger(alter) || Math.abs(alter) > 2) throw never('미분음');
+      note.pitch = transpose({ step: childText(pitch, 'step'), alter, octave: Number(childText(pitch, 'octave')) }, interval);
+      const ties = childrenOf(element, 'tie').map((tie) => tie.getAttribute('type'));
+      const marks = ties.length ? ties : [...element.querySelectorAll('notations > tied')].map((tie) => tie.getAttribute('type'));
+      note.tieStart = marks.includes('start');
+      note.tieStop = marks.includes('stop');
+    }
+    const brackets = [...element.querySelectorAll('notations > tuplet')];
+    note.bracketStarts = brackets.filter((b) => b.getAttribute('type') === 'start').length;
+    note.bracketStops = brackets.filter((b) => b.getAttribute('type') === 'stop').length;
+    return note;
+  }
+
+  // Tuplet groups in a measure: the file's brackets when it has them, else runs of notes with the same ratio, each
+  // closed when it adds up to `actual` notes of its first note's kind. A group inside a group waits for TODO 37.
+  function markTuplets(notes) {
+    let open = null;
+    let sum = ZERO;
+    let unit = null;
+    notes.forEach((note, i) => {
+      if (note.bracketStarts > 1 || (open && note.bracketStarts)) throw later('잇단음표 안의 잇단음표');
+      if (!note.tuplet) {
+        if (open) throw never('잇단음표 묶음');
+        return;
+      }
+      if (open && (open.actual !== note.tuplet.actual || open.normal !== note.tuplet.normal)) throw later('잇단음표 안의 잇단음표');
+      if (!open) {
+        open = note.tuplet;
+        note.tupletStart = true;
+        sum = ZERO;
+        unit = N.duration({ type: note.type, dots: note.dots });
+      }
+      sum = N.add(sum, N.duration({ type: note.type, dots: note.dots }));
+      const full = N.cmp(sum, N.mul(unit, N.frac(open.actual))) >= 0;
+      if (note.bracketStops || full || !notes[i + 1]?.tuplet) {
+        note.tupletStop = true;
+        open = null;
+      }
+    });
+  }
+
+  // Keeps a tie only where the next note of the line ends it on the same pitch. Returns how many were dropped.
+  function pairTies(notes) {
+    let dropped = 0;
+    notes.forEach((note, i) => {
+      if (note.rest) return;
+      const joins = (a, b) => a && b && !a.rest && !b.rest && a.tieStart && b.tieStop && N.midi(a.pitch) === N.midi(b.pitch);
+      const starts = joins(note, notes[i + 1]);
+      const stops = joins(notes[i - 1], note);
+      if (note.tieStart && !starts) dropped++;
+      if (starts && stops) note.tie = 'both';
+      else if (starts) note.tie = 'start';
+      else if (stops) note.tie = 'stop';
+    });
+    return dropped;
+  }
+
+  // An element for the chosen staff: no number (every staff) or that staff's number.
+  const forStaff = (element, staff) => !element.hasAttribute('number') || Number(element.getAttribute('number')) === staff;
+
+  // The chosen line of a part → { score (v2, id 'import'), notices: [one-line notes for the user] }.
+  function convert(doc, partIndex, lineIndex, fileName = '') {
+    const listed = candidates(doc, fileName);
+    const info = listed.parts[partIndex];
+    const line = info?.lines[lineIndex];
+    if (!line) throw new ImportError('고른 선율을 찾지 못했어요.');
+    if (hasRepeats(doc)) throw later('도돌이표·D.C. 등');
+    const allParts = childrenOf(doc.documentElement, 'part');
+    const walked = allParts.map(walkPart);
+    const measures = walked[allParts.findIndex((p) => p.getAttribute('id') === info.id)];
+    if (!measures.length) throw new ImportError('마디가 없어요.');
+    const tempos = tempoMap(walked, measures.length);
+    const concert = Boolean(doc.querySelector('concert-score'));
+    const notices = new Set();
+    let time = null;
+    let key = null;
+    let writtenKey = { fifths: 0, mode: 'major' };
+    let clef = null;
+    let interval = null;
+    let tempo = null;
+    let pending = {}; // changes written at a measure's end, for the next measure
+    let pickup = false;
+    const out = [];
+
+    measures.forEach((m, i) => {
+      const attrs = pending;
+      pending = {};
+      const events = [];
+      for (const item of m.items) {
+        if (item.kind === 'note') {
+          const staff = Number(childText(item.element, 'staff')) || 1;
+          const voice = childText(item.element, 'voice') || '1';
+          if (staff !== line.staff || voice !== line.voice) continue;
+          if (item.chord) throw later('화음');
+          if (item.grace) throw later('꾸밈음');
+          events.push(item);
+          continue;
+        }
+        if (item.kind !== 'attributes') continue;
+        const atStart = N.cmp(item.start, ZERO) === 0;
+        const atEnd = !atStart && N.cmp(item.start, m.length) >= 0;
+        const target = atEnd ? pending : attrs;
+        const change = (name, value, same) => {
+          if (!atStart && !atEnd && !same) throw later('마디 중간 음자리표·조·박자 바뀜');
+          target[name] = value;
+        };
+        for (const t of childrenOf(item.element, 'transpose')) {
+          if (concert || !forStaff(t, line.staff)) continue;
+          const octaves = Number(childText(t, 'octave-change')) || 0;
+          const diatonic = (Number(childText(t, 'diatonic')) || 0) + 7 * octaves;
+          const chromatic = (Number(childText(t, 'chromatic')) || 0) + 12 * octaves;
+          const next = diatonic || chromatic ? { diatonic, chromatic } : null;
+          change('interval', next, JSON.stringify(next) === JSON.stringify(interval));
+        }
+        for (const k of childrenOf(item.element, 'key')) {
+          if (forStaff(k, line.staff)) change('writtenKey', keyOf(k, notices), false);
+        }
+        for (const t of childrenOf(item.element, 'time')) {
+          if (!forStaff(t, line.staff)) continue;
+          const value = timeOf(t);
+          change('time', value, String(value) === String(time));
+        }
+        for (const c of childrenOf(item.element, 'clef')) {
+          if (!forStaff(c, line.staff)) continue;
+          const value = clefOf(c);
+          change('clef', value, value === clef);
+        }
+      }
+      if ('interval' in attrs) interval = attrs.interval;
+      if (attrs.writtenKey) writtenKey = attrs.writtenKey;
+      if (interval) notices.add('실음으로 옮겼어요');
+      const measure = {};
+      const nextTime = attrs.time ?? time ?? [4, 4];
+      const nextKey = transposeKey(writtenKey, interval);
+      const nextClef = attrs.clef ?? clef ?? 'treble';
+      if (String(nextTime) !== String(time)) measure.time = time = nextTime;
+      if (JSON.stringify(nextKey) !== JSON.stringify(key)) measure.key = key = nextKey;
+      if (nextClef !== clef) measure.clef = clef = nextClef;
+      if (i === 0 && tempos[0] === undefined) notices.add(`빠르기 표시가 없어 ♩=${DEFAULT_TEMPO}`);
+      const nextTempo = tempos[i] ?? tempo ?? DEFAULT_TEMPO;
+      if (nextTempo !== tempo) measure.tempo = tempo = nextTempo;
+
+      // The measure's length: as written (its furthest voice), or a whole measure when it is empty.
+      const full = N.measureLength(time);
+      const length = N.cmp(m.length, ZERO) > 0 ? m.length : full;
+      const longer = N.cmp(length, full);
+      if (longer > 0) throw never('박자보다 긴 마디');
+      if (longer < 0) {
+        if (i === 0) pickup = true;
+        else if (i !== measures.length - 1) throw later('곡 중간의 짧은 마디');
+      }
+
+      const notes = [];
+      let cursor = ZERO;
+      for (const event of events) {
+        const gap = N.cmp(event.start, cursor);
+        if (gap < 0) throw never('한 성부 안에서 겹치는 음');
+        if (gap > 0) notes.push(...restsFor(N.sub(event.start, cursor)));
+        const rest = childOf(event.element, 'rest');
+        // A measure rest: marked as one, or a rest filling the whole measure with no type or the whole-rest type
+        // (older files write a whole rest for a full measure in any time).
+        const type = childText(event.element, 'type');
+        const wholeMeasure = rest && (rest.getAttribute('measure') === 'yes'
+          || ((!type || type === 'whole') && N.cmp(event.start, ZERO) === 0 && N.cmp(event.duration, length) === 0));
+        if (wholeMeasure) notes.push(...restsFor(event.duration));
+        else notes.push(noteOf(event.element, event.duration, interval));
+        cursor = N.add(event.start, event.duration);
+      }
+      if (N.cmp(cursor, length) > 0) throw never('박자보다 긴 마디');
+      if (N.cmp(cursor, length) < 0) notes.push(...restsFor(N.sub(length, cursor)));
+      markTuplets(notes);
+      measure.notes = notes;
+      out.push(measure);
+    });
+
+    const dropped = pairTies(out.flatMap((m) => m.notes));
+    if (dropped) notices.add(`이어질 음이 없는 붙임줄 ${dropped}개는 뺐어요`);
+    for (const m of out) m.notes = m.notes.map(({ tieStart, tieStop, bracketStarts, bracketStops, ...note }) => note);
+
+    // Measure numbers as printed, kept when they run on from the first one.
+    const first = Number(measures[0].number);
+    if (!Number.isInteger(first) || !measures.every((m, i) => Number(m.number) === first + i)) throw later('마디 번호가 이어지지 않음');
+    const score = { id: 'import', title: listed.title.slice(0, N.MAX_TITLE), pickup, measures: out };
+    if (first !== (pickup ? 0 : 1) && first >= 0) score.firstNumber = first;
+    if (!N.isValid(score)) throw new ImportError('악보를 옮기지 못했어요.');
+    return { score: N.clean(score), notices: [...notices] };
+  }
+
+  window.MusicXML = { read, decode, candidates, convert, ImportError, MESSAGES };
 })();

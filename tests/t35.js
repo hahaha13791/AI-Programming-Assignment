@@ -193,7 +193,7 @@ T.test('35-4 파일 읽기와 파트·성부 목록', async (T) => {
 
   await importFile(file35(FLUTE, 'flute.musicxml'));
   T.check(T.$('import-lines').hidden && !T.$('import-parts').hidden, '성부가 하나뿐이면 보표·성부를 묻지 않음');
-  T.check(T.$('btn-import').disabled && !T.$('import-pending').hidden, '36단계 전까지 [불러오기]는 잠김');
+  T.check(!T.$('btn-import').disabled, '목록이 뜨면 [불러오기]를 누를 수 있음 (36단계부터)');
 
   // Two parts: changing the part changes the line list.
   const twoParts = PIANO.replace('<part-name>Drums</part-name>', '<part-name>Violin</part-name>')
