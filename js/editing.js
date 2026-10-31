@@ -158,6 +158,83 @@
     return { notes: out, index };
   }
 
+  // The usual "in the time of" for a tuplet of this many notes: 3 in 2, 5·6·7 in 4 (PRD #4-H-3).
+  const NORMAL = { 2: 3, 3: 2, 4: 3, 5: 4, 6: 4, 7: 4, 9: 8 };
+
+  // A written note (type and dots) exactly this long, or null.
+  function noteOfLength(length) {
+    for (const type of PLAIN) {
+      for (let dots = 0; dots <= 2; dots++) if (cmp(N.duration({ type, dots }), length) === 0) return { type, dots };
+    }
+    return null;
+  }
+
+  // From note `at`, the time of `normal` notes of `type` (the note's own written type by default) becomes a group
+  // of `actual` rests of that type: a tuplet, or a tuplet inside the tuplet it's in. Returns { notes, index } or null
+  // (no room, a third level, a length that can't be written).
+  function makeTuplet(notes, at, actual, normal, type = notes[at].type) {
+    const target = notes[at];
+    if (target.grace || target.tuplet2) return null;
+    const unit = { type, dots: 0 };
+    const span = noteOfLength(mul(N.duration(unit), frac(normal)));
+    if (!span) return null;
+    const written = overwrite(notes, at, { ...span, rest: true });
+    if (!written) return null;
+    const out = written.notes;
+    const placed = out[written.index];
+    const level = placed.tuplet ? 'tuplet2' : 'tuplet';
+    const members = Array.from({ length: actual }, (_, k) => {
+      const rest = { ...unit, rest: true };
+      if (placed.tuplet) rest.tuplet = { ...placed.tuplet };
+      rest[level] = { actual, normal };
+      if (k === 0) {
+        rest[`${level}Start`] = true;
+        if (placed.tupletStart) rest.tupletStart = true;
+      }
+      if (k === actual - 1) {
+        rest[`${level}Stop`] = true;
+        if (placed.tupletStop) rest.tupletStop = true;
+      }
+      return rest;
+    });
+    out.splice(written.index, 1, ...members);
+    return { notes: out, index: written.index };
+  }
+
+  // The innermost tuplet group note `at` is in, back to plain rests of its length (in the group around it, if any).
+  function removeTuplet(notes, at) {
+    const target = notes[at];
+    const level = target.tuplet2 ? 'tuplet2' : target.tuplet ? 'tuplet' : null;
+    if (!level) return null;
+    const ids = groupIds(notes);
+    const id = ids[at][level];
+    const members = notes.map((n, i) => i).filter((i) => !notes[i].grace && ids[i][level] === id);
+    const first = members[0];
+    const last = members[members.length - 1];
+    const length = members.reduce((sum, i) => add(sum, N.duration(notes[i])), ZERO);
+    // Written in the outer group (if the removed one was inside one).
+    const outer = level === 'tuplet2' ? target.tuplet : null;
+    const writtenLength = outer ? mul(length, frac(outer.actual, outer.normal)) : length;
+    const rests = restsFor(writtenLength);
+    if (!rests) return null;
+    const outerId = outer ? ids[at].tuplet : undefined;
+    const out = [];
+    const outIds = [];
+    notes.forEach((n, i) => {
+      if (i < first || i > last) {
+        out.push(n);
+        outIds.push(ids[i]);
+      } else if (i === first) {
+        for (const r of rests) {
+          out.push(outer ? { ...r, tuplet: { ...outer } } : r);
+          outIds.push(outer ? { tuplet: outerId } : {});
+        }
+      }
+    });
+    markGroups(out, outIds);
+    return { notes: out, index: first };
+  }
+
   // Ties kept only where both ends are still there, the same pitch in neighbouring notes (after any change).
   function fixTies(score) {
     const notes = score.measures.flatMap((m) => m.notes);
@@ -395,6 +472,62 @@
       return c.head > 0 ? note.chord?.[c.head - 1] ?? null : note;
     }
 
+    // Ties the cursor note to the next note: each of its pitches that the next note has too (a chord, pitch by
+    // pitch); off again if they are tied. Returns false (nothing changes) when the next note has none of them.
+    function toggleTie() {
+      return change((draft, c) => {
+        const flat = draft.measures.flatMap((m) => m.notes);
+        const offset = draft.measures.slice(0, c.measure).reduce((sum, m) => sum + m.notes.length, 0) + c.note;
+        const note = flat[offset];
+        const next = flat[offset + 1];
+        if (!note || note.rest || note.grace || !next || next.rest || next.grace) return false;
+        const entries = (n) => [n, ...(n.chord ?? [])];
+        const pairs = entries(note).map((e) => [e, entries(next).find((x) => N.midi(x.pitch) === N.midi(e.pitch))]).filter(([, x]) => x);
+        if (!pairs.length) return false;
+        const tied = pairs.some(([e]) => N.tieStarts(e.tie));
+        for (const [e, x] of pairs) {
+          if (tied) {
+            e.tie = N.tieStops(e.tie) ? 'stop' : undefined;
+            x.tie = N.tieStarts(x.tie) ? 'start' : undefined;
+          } else {
+            e.tie = N.tieStops(e.tie) ? 'both' : 'start';
+            x.tie = N.tieStarts(x.tie) ? 'both' : 'stop';
+          }
+          if (!e.tie) delete e.tie;
+          if (!x.tie) delete x.tie;
+        }
+        return true;
+      });
+    }
+
+    // Whether the cursor note is tied on to the next.
+    const isTied = () => N.pitchesOf(noteAt(doc)).some((p) => N.tieStarts(p.tie));
+
+    // A tuplet of `actual` notes of `type` (by default the cursor note's) in the time of `normal` (by default the
+    // usual one), from the cursor.
+    function tuplet(actual, normal = NORMAL[actual], type) {
+      if (!(actual >= 2 && actual <= 15 && normal >= 1 && normal <= 15) || actual === normal) return false;
+      return change((draft, c) => {
+        const made = makeTuplet(draft.measures[c.measure].notes, c.note, actual, normal ?? NORMAL[actual], type);
+        if (!made) return false;
+        draft.measures[c.measure].notes = made.notes;
+        fixTies(draft);
+        c.note = made.index;
+        return true;
+      });
+    }
+
+    function untuplet() {
+      return change((draft, c) => {
+        const made = removeTuplet(draft.measures[c.measure].notes, c.note);
+        if (!made) return false;
+        draft.measures[c.measure].notes = made.notes;
+        fixTies(draft);
+        c.note = made.index;
+        return true;
+      });
+    }
+
     // The score as it would be stored (its id is the app's business: the old one, or none for a new score).
     function result() {
       return N.clean({ ...trimmed(copy(doc)), id: id ?? 'new', title: title.trim() });
@@ -417,11 +550,11 @@
       canUndo: () => past.length > 0,
       canRedo: () => future.length > 0,
       move, moveMeasure, select, result, canSave,
-      fits, insert, setLength, erase, semitone, octave,
+      fits, insert, setLength, erase, semitone, octave, toggleTie, isTied, tuplet, untuplet,
       alterAt: (measure, at, step, oct) => alterAt(doc, measure, at, step, oct),
       clefAt: (measure = cursor.measure, at = cursor.note) => clefAt(doc, measure, at),
     };
   }
 
-  window.Editing = { create, blank, restsFor, overwrite, fixTies, HISTORY, DEFAULT };
+  window.Editing = { create, blank, restsFor, overwrite, fixTies, makeTuplet, removeTuplet, NORMAL, HISTORY, DEFAULT };
 })();

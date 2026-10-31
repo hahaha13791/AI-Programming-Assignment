@@ -1257,7 +1257,7 @@ button:focus-visible {
 }
 
 .editor-tools {
-  height: 24rem;
+  height: 27rem;
   overflow-y: auto;
   padding: var(--space-3) 0;
 }
@@ -1292,6 +1292,28 @@ button:focus-visible {
   background: var(--accent-soft);
   color: var(--accent);
   font-weight: 600;
+}
+
+.ed-ratio {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.ed-number {
+  width: 2.6rem;
+  min-height: 2.4rem;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+}
+
+.editor-status.is-notice {
+  color: var(--wrong);
 }
 
 .ed-pad-svg {

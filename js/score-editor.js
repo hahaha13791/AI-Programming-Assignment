@@ -71,9 +71,39 @@
     const restButton = button('쉼표', { id: 'editor-rest' });
     const applyButton = button('길이 바꾸기', { id: 'editor-apply-length' });
     const eraseButton = button('지우기', { id: 'editor-erase' });
+    const tieButton = button('붙임줄', { id: 'editor-tie', 'aria-pressed': 'false' });
     const actionRow = document.createElement('div');
     actionRow.className = 'ed-row';
-    actionRow.append(dotButton, restButton, applyButton, eraseButton);
+    actionRow.append(dotButton, restButton, applyButton, eraseButton, tieButton);
+    // Tuplets: the usual ones, any n:m, and back to plain rests (PRD #4-H-3).
+    const tupletRow = document.createElement('div');
+    tupletRow.className = 'ed-row ed-tuplets';
+    tupletRow.setAttribute('role', 'group');
+    tupletRow.setAttribute('aria-label', '잇단음표');
+    const tupletButtons = [3, 5, 6, 7].map((n) => {
+      const b = button(`${n}잇단`, { 'data-tuplet': n });
+      b.addEventListener('click', () => makeTuplet(n));
+      return b;
+    });
+    const number = (id, value, label) => {
+      const field = document.createElement('input');
+      Object.assign(field, { type: 'number', id, min: 1, max: 15, value });
+      field.className = 'ed-number';
+      field.setAttribute('aria-label', label);
+      return field;
+    };
+    const actualField = number('editor-tuplet-actual', 3, '잇단음표 음 개수');
+    const normalField = number('editor-tuplet-normal', 2, '몇 개의 시간에');
+    const customButton = button('만들기', { id: 'editor-tuplet-custom' });
+    customButton.addEventListener('click', () => makeTuplet(Number(actualField.value), Number(normalField.value)));
+    const untupletButton = button('잇단 풀기', { id: 'editor-untuplet' });
+    untupletButton.addEventListener('click', () => {
+      if (state.untuplet()) render();
+    });
+    const ratio = document.createElement('span');
+    ratio.className = 'ed-ratio';
+    ratio.append(actualField, ':', normalField, customButton);
+    tupletRow.append(...tupletButtons, ratio, untupletButton);
     const toggles = [[1, '♯', 'editor-sharp', '샵'], [-1, '♭', 'editor-flat', '플랫'], [0, '♮', 'editor-natural', '제자리표']].map(([value, text, id, name]) => {
       const b = button(`${text}\uFE0E`, { id, 'aria-pressed': 'false', 'aria-label': `${name} 붙여 넣기` });
       b.classList.add('btn-toggle');
@@ -95,7 +125,25 @@
     const pad = document.createElement('div');
     pad.className = 'ed-pad';
     pad.id = 'editor-pad';
-    tools.notes.append(lengthRow, actionRow, pitchRow, pad);
+    tools.notes.append(lengthRow, actionRow, tupletRow, pitchRow, pad);
+
+    // A message in the status line until the next change (why nothing happened).
+    function flash(message) {
+      status.textContent = message;
+      status.classList.add('is-notice');
+    }
+
+    // Of the chosen length (8분 + 3잇단 = an eighth-note triplet, in the time of a quarter).
+    function makeTuplet(actual, normal) {
+      if (state.tuplet(actual, normal, input.type)) render();
+      else flash('여기에는 그 잇단음표가 들어가지 않아요 (마디나 묶음 밖으로 넘치거나 세 겹이 됨).');
+    }
+
+    function toggleTie() {
+      if (state.toggleTie()) render();
+      else flash('다음 음에 같은 높이가 없어 붙임줄을 걸 수 없어요.');
+    }
+    tieButton.addEventListener('click', toggleTie);
 
     function chooseLength(type) {
       input.type = type;
@@ -170,6 +218,12 @@
       dotButton.textContent = input.dots === 2 ? '겹점' : '점';
       dotButton.setAttribute('aria-pressed', String(input.dots > 0));
       for (const [value, b] of toggles) b.setAttribute('aria-pressed', String(input.toggle === value));
+      const target = state.score.measures[state.cursor.measure].notes[state.cursor.note];
+      tieButton.setAttribute('aria-pressed', String(state.isTied()));
+      tieButton.disabled = Boolean(target.rest || target.grace);
+      for (const b of tupletButtons) b.disabled = Boolean(target.grace || target.tuplet2);
+      customButton.disabled = Boolean(target.grace || target.tuplet2);
+      untupletButton.disabled = !target.tuplet;
       const fitsNow = state.fits(input.type, input.dots);
       restButton.disabled = !fitsNow;
       pad.classList.toggle('is-disabled', !fitsNow);
@@ -199,6 +253,7 @@
       const score = { ...state.score, id: 'edit', title: state.title || '새 악보' };
       Sheet.draw(view, score, { pick: true, cursor: state.cursor, numberFirst: true, label: `편집 중인 악보, ${score.title}` });
       status.textContent = describe(score, state.cursor);
+      status.classList.remove('is-notice');
       undo.disabled = !state.canUndo();
       redo.disabled = !state.canRedo();
       renderTools();
@@ -276,6 +331,10 @@
         write({ type: input.type, dots: input.dots, pitch: nearest(letter) });
       } else if (plain && KEY_LENGTHS[event.key]) {
         chooseLength(KEY_LENGTHS[event.key]);
+      } else if (!ctrl && event.altKey && ['3', '5', '6', '7'].includes(event.key)) {
+        makeTuplet(Number(event.key)); // Alt+number: the browser keeps Ctrl+number for its tabs
+      } else if (plain && event.key === '+') {
+        toggleTie();
       } else if (plain && event.key === '.') {
         dotButton.click();
       } else if (plain && event.key === '0') {
