@@ -69,6 +69,13 @@
       else staff.setLocked(false);
     },
 
+    // Deletes the chosen 내 악보 score: [편집] → the editor's [삭제] twice (expansion 7: every score opens in the editor).
+    deleteScore() {
+      $('btn-edit-score').click();
+      $('editor-delete').click();
+      $('editor-delete').click();
+    },
+
     clickStep(step, container = $('staff-area')) {
       const p = stepPoint(step, container);
       svgOf(container).dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: p.x, clientY: p.y }));

@@ -19,7 +19,7 @@ T.test('27-6 옮겨 온 악보 편집·저장', async (T) => {
   T.setMode('score');
   T.$('btn-edit-score').click();
   T.check(!T.$('editor').hidden && T.$('editor-title').value === '옛 악보', '편집기가 옛 악보로 열림');
-  T.check(document.querySelector('#editor-times [data-beats="3"]').getAttribute('aria-checked') === 'true', '박자 3/4');
+  T.check(String(scoreEditor.state.score.measures[0].time) === '3,4', '박자 3/4');
   T.$('editor-save').click();
   const stored = JSON.parse(localStorage.getItem(Scores.STORAGE_KEY) || 'null');
   T.check(Array.isArray(stored) && stored.length === scores.list().length && stored.every(Notation.isValid), '저장하면 목록 전체가 v2로 쓰임');

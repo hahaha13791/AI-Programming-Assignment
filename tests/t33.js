@@ -128,11 +128,13 @@ T.test('33-4 예시 악보와 편집기 악보 한 사이클', async (T) => {
   T.$('btn-make-score').click(); // 35단계부터 [새 악보]는 작은 창 → 직접 만들기
   T.$('editor-title').value = '편집기 악보';
   T.$('editor-title').dispatchEvent(new Event('input'));
-  document.querySelector('#editor-lengths [data-type="h"]').click();
-  T.clickStep(4, T.$('editor-pad'));
-  T.setAccidental(-1, 'editor-sharp', 'editor-flat');
-  T.clickStep(6, T.$('editor-pad'));
-  T.setAccidental(0, 'editor-sharp', 'editor-flat');
+  // (음 넣기 화면은 43단계: 그때까지 편집 동작으로 솔·시♭ 2분음표를 넣는다.)
+  scoreEditor.apply((s) => {
+    s.measures[0].notes = [
+      { type: 'half', dots: 0, pitch: { step: 'G', alter: 0, octave: 4 } },
+      { type: 'half', dots: 0, pitch: { step: 'B', alter: -1, octave: 4 } },
+    ];
+  });
   T.$('editor-save').click();
   T.check(scores.get(scoreId)?.title === '편집기 악보', '편집기로 만든 악보가 선택됨');
   T.check(await T.listen(), '재생 후 입력 풀림');

@@ -163,7 +163,7 @@ T.test('36-4 불러오기와 연습 한 사이클', async (T) => {
   const saved = scores.get(scoreId);
   T.check(T.$('new-score').hidden && scores.list().length === before + 1 && saved.title === '시험 곡', '[불러오기] → 창이 닫히고 새 악보로 저장');
   T.check(T.$('score-select').value === scoreId && section && section.start === 0 && section.end === 1, `그 악보가 선택되고 처음 2마디부터 (${section?.label})`);
-  T.check(T.$('btn-edit-score').dataset.action === 'delete', '편집기 범위 밖(못갖춘마디 등)이면 [편집] 자리가 [삭제]');
+  T.check(T.$('btn-edit-score').dataset.action === 'edit', '불러온 악보도 [편집] (확장 7부터 모든 악보가 편집기로 열림)');
 
   await T.listen();
   T.enterNotes(current);
@@ -176,8 +176,7 @@ T.test('36-4 불러오기와 연습 한 사이클', async (T) => {
   // A fresh read of the store, as after a reload.
   T.check(Scores.open().list().some((s) => s.id === scoreId && s.title === '시험 곡'), '새로 읽어도(새로고침) 불러온 악보가 남아 있음');
   const id = scoreId;
-  T.$('btn-edit-score').click();
-  T.$('btn-edit-score').click();
+  T.deleteScore();
   T.check(!scores.get(id) && !Scores.open().list().some((s) => s.id === id), '[삭제] 두 번으로 지워짐');
 
   // Notices sit in the panel's fixed notice place.
@@ -196,7 +195,7 @@ T.test('36-4 불러오기와 연습 한 사이클', async (T) => {
   await importThroughBox(SIMPLE, 'simple.musicxml');
   T.check(T.$('btn-edit-score').dataset.action === 'edit', '다장조·4분음표·♩= 80·12마디 이하는 [편집]');
   T.$('btn-edit-score').click();
-  T.check(!T.$('editor').hidden && editor.getScore().notes.length === 6, '편집기가 열리고 음 6개');
+  T.check(!T.$('editor').hidden && scoreEditor.state.score.measures.flatMap((m) => m.notes).filter((n) => !n.rest).length === 6, '편집기가 열리고 음 6개');
   T.$('editor-cancel').click();
 
   // Piano: pick the lower staff.

@@ -193,8 +193,7 @@
     T.check(section && section.start === 4 && text(current) === 'G5 A5', `"다음 문제"는 도돌이표로 돌아가지 않고 다음 마디(5~6마디) (${section?.start}, ${text(current)})`);
     T.check(Math.abs(T.$('staff-title').getBoundingClientRect().top - writeTop) < 0.5 && T.noHorizontalOverflow(), '받아 적기 영역 위치 그대로, 가로 넘침 없음');
 
-    T.$('btn-edit-score').click();
-    T.$('btn-edit-score').click();
+    T.deleteScore();
     localStorage.removeItem(Scores.STORAGE_KEY);
     localStorage.removeItem(Settings.SECTIONS_KEY);
     T.$('score-select').value = scores.list()[0].id;

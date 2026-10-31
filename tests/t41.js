@@ -209,9 +209,8 @@
     T.check(!T.$('new-score').hidden && T.$('import-status').textContent.includes('혼합 박자') && T.$('import-status').classList.contains('is-error') && scores.list().length === count,
       `불러오지 못한 이유를 창에 (${T.$('import-status').textContent})`);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    T.check(T.$('btn-edit-score').dataset.action === 'delete', '불러온 악보는 [삭제]');
-    T.$('btn-edit-score').click();
-    T.$('btn-edit-score').click();
+    T.check(T.$('btn-edit-score').dataset.action === 'edit', '불러온 악보도 [편집] (확장 7부터 모든 악보가 편집기로 열림)');
+    T.deleteScore();
     T.check(!scores.get(id) && !Scores.open().get(id) && scores.list().length === count - 1, '삭제하면 저장소에서도 사라짐');
     clean();
     T.$('score-select').value = scores.list()[0].id;

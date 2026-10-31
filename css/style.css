@@ -1141,15 +1141,7 @@ button:focus-visible {
   display: none;
 }
 
-.editor-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2) var(--space-4);
-}
-
 .editor-title {
-  flex: 1 1 220px;
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -1180,15 +1172,6 @@ button:focus-visible {
   outline-offset: 1px;
 }
 
-.editor-hint {
-  margin: var(--space-3) 0;
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-}
-
-.editor-lengths {
-  margin-bottom: var(--space-3);
-}
 
 .note-button[aria-checked="true"] {
   border-color: var(--accent);
@@ -1200,8 +1183,83 @@ button:focus-visible {
   color: var(--accent);
 }
 
-.editor-tools {
+/* The score being edited: the chosen note (cursor) in the accent colour; each note's share of its measure can be
+   pressed. */
+.editor-view {
   margin-top: var(--space-3);
+  min-height: 120px;
+}
+
+.sv-pick {
+  fill: transparent;
+  cursor: pointer;
+}
+
+.sv-note.is-cursor {
+  color: var(--accent);
+}
+
+.sv-note.is-cursor .sv-head.is-cursor-head {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+
+.sv-note.is-cursor .sv-stem,
+.sv-note.is-cursor .sv-ledger {
+  stroke: var(--accent);
+}
+
+.sv-note.is-cursor .sv-open {
+  stroke: var(--accent);
+}
+
+.editor-status {
+  height: 1.5em;
+  margin: var(--space-2) 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.editor-history {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* Tool tabs: the panel keeps one height whichever tab is open (PRD #4-H-3). */
+.editor-tabs {
+  display: flex;
+  gap: var(--space-1);
+  margin-top: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.editor-tabs [role="tab"] {
+  flex: 1 1 0;
+  min-height: var(--control-height);
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.editor-tabs [role="tab"][aria-selected="true"] {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.editor-tools {
+  height: 13rem;
+  overflow-y: auto;
+  padding: var(--space-3) 0;
 }
 
 .editor-actions {

@@ -219,9 +219,10 @@
   }
 
   // Everything needed to space and draw one measure.
-  function measureInfo(measure, index, prev) {
+  // exact: every rest as written (the editor, where each can be chosen), no measure rest.
+  function measureInfo(measure, index, prev, exact = false) {
     const length = N.filled(measure.notes); // what it holds, for its share of the row
-    const measureRest = isMeasureRest(measure, length);
+    const measureRest = !exact && isMeasureRest(measure, length);
     if (measureRest) measure = { ...measure, notes: [{ type: 'whole', dots: 0, rest: true }] };
     const changes = {
       clef: !prev || prev.endClef !== measure.clef,
@@ -236,7 +237,7 @@
       if (clefChange) clef = clefChange;
       if (note.rest) return { note, pos: null, top: null, bottom: null, heads: [], stem: 0, stemEnd: null, beam: null, accidental: null, clefChange };
       const heads = N.pitchesOf(note).map(({ pitch, tie }, h) => ({
-        pitch, tie, pos: position(pitch, clef), accidental: accidentals[i][h], written: h === 0,
+        pitch, tie, pos: position(pitch, clef), accidental: accidentals[i][h], written: h === 0, index: h,
       })).sort((a, b) => a.pos - b.pos);
       const top = heads[heads.length - 1].pos;
       const bottom = heads[0].pos;
@@ -691,11 +692,11 @@
         }, SIGNS[head.accidental]));
       }
       if (note.type === 'whole') {
-        group.append(svgEl('ellipse', { cx: hx, cy: hy, rx: 7.5, ry: 5, class: 'sv-open sv-whole sv-head', 'data-pos': head.pos, 'data-midi': midi }));
+        group.append(svgEl('ellipse', { cx: hx, cy: hy, rx: 7.5, ry: 5, class: 'sv-open sv-whole sv-head', 'data-pos': head.pos, 'data-midi': midi, 'data-head': head.index }));
       } else {
         group.append(svgEl('ellipse', {
           cx: hx, cy: hy, rx: HEAD_RX, ry: 4.6, transform: `rotate(-20 ${hx} ${hy})`,
-          class: `${OPEN[note.type] ? 'sv-open' : 'sv-fill'} sv-head`, 'data-pos': head.pos, 'data-midi': midi,
+          class: `${OPEN[note.type] ? 'sv-open' : 'sv-fill'} sv-head`, 'data-pos': head.pos, 'data-midi': midi, 'data-head': head.index,
         }));
       }
       for (let d = 0; d < (note.dots ?? 0); d++) {
@@ -840,8 +841,19 @@
       const middle = (x + MEASURE_PAD_LEFT + info.leftExtra + x + widths[k] - MEASURE_PAD_RIGHT - info.rightExtra) / 2;
       const drawn = info.notes.map((item, i) => {
         if (item.clefChange) drawClef(group, item.clefChange, nx + 1, yOf, true);
+        // The editor: a press area over the note's share of the measure (behind it, so a head can be pressed itself).
+        if (options.pick) {
+          group.prepend(svgEl('rect', { x: nx, y: 0, width: sizes[i], height, class: 'sv-pick', 'data-measure': info.index, 'data-index': i }));
+        }
         const result = drawNote(group, item, info.measureRest ? middle : nx + item.parts.left + item.parts.head / 2, yOf);
-        if (info.measureRest) group.lastElementChild.dataset.measureRest = '';
+        const noteGroup = group.lastElementChild;
+        noteGroup.dataset.index = i;
+        if (info.measureRest) noteGroup.dataset.measureRest = '';
+        const cursor = options.cursor;
+        if (cursor && cursor.measure === info.index && cursor.note === i) {
+          noteGroup.classList.add('is-cursor');
+          noteGroup.querySelector(`.sv-head[data-head="${cursor.head ?? 0}"]`)?.classList.add('is-cursor-head');
+        }
         nx += sizes[i];
         return result;
       });
@@ -919,7 +931,8 @@
     return (container.clientWidth || 0) >= WIDE_MIN;
   }
 
-  // score: a v2 score. options: { label, numberFirst (show the number on the first row too) }.
+  // score: a v2 score. options: { label, numberFirst (show the number on the first row too), pick (the editor: press
+  // areas over the notes, every rest as written), cursor: { measure, note, head } (the editor's chosen note) }.
   // Redrawn when the box crosses the wide/narrow width.
   function draw(container, score, options = {}) {
     container.__sheet = { score, options };
@@ -940,7 +953,7 @@
     const wide = isWide(container);
     const width = wide ? WIDTH.wide : WIDTH.narrow;
     const measures = N.resolve(score);
-    const infos = measures.map((measure, i) => measureInfo(measure, i, i ? measures[i - 1] : null));
+    const infos = measures.map((measure, i) => measureInfo(measure, i, i ? measures[i - 1] : null, Boolean(options.pick)));
     const rows = layoutRows(infos, width, wide ? 4 : 2);
     const sheet = document.createElement('div');
     sheet.className = 'sheet';

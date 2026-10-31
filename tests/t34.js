@@ -119,8 +119,10 @@ T.test('34-4 기존 악보·편집기·모드 유지', async (T) => {
   T.check(!T.$('editor').hidden && T.$('editor-title').value === '반짝반짝 작은 별', '반짝반짝 작은 별은 편집기로 열림');
   T.$('editor-cancel').click();
   choose34('example-rhythm-etude');
-  T.check(T.$('btn-edit-score').textContent === '삭제' && T.$('score-notice').textContent.includes('편집할 수 없어요'),
-    '편집기 밖 악보는 이유 안내와 [삭제] (편집기는 확장 7)');
+  T.$('btn-edit-score').click();
+  T.check(!T.$('editor').hidden && T.$('editor-title').value.includes('리듬') && T.$('score-notice').hidden,
+    '리듬 표기 연습곡도 편집기로 열림" + E7 + "');
+  T.$('editor-cancel').click();
   choose34('example-twinkle');
   T.setMode('melody');
   T.check(await T.listen(), '멜로디 모드 재생');

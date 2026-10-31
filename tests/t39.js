@@ -132,8 +132,7 @@
     T.check(section && section.start === 1 && text(current) === 'D5 C5', `마디 첫머리의 꾸밈음은 그 마디 구간에 속함 (${text(current)})`);
     T.check(Math.abs(T.$('staff-title').getBoundingClientRect().top - writeTop) < 0.5 && T.noHorizontalOverflow(), '받아 적기 영역 위치 그대로, 가로 넘침 없음');
 
-    T.$('btn-edit-score').click();
-    T.$('btn-edit-score').click();
+    T.deleteScore();
     localStorage.removeItem(Scores.STORAGE_KEY);
     localStorage.removeItem(Settings.SECTIONS_KEY);
     T.$('score-select').value = scores.list()[0].id;

@@ -229,9 +229,8 @@
     const panel = T.$('score-picker').getBoundingClientRect();
     T.check(select.right <= panel.right + 0.5 && T.noHorizontalOverflow(), '긴 제목이 패널을 넘치지 않음');
     T.check(Math.abs(T.$('staff-title').getBoundingClientRect().top - writeTop) < 0.5, '받아 적기 영역 위치 그대로');
-    T.check(T.$('btn-edit-score').dataset.action === 'delete', '편집기 범위 밖(알토 음자리표)이면 [삭제]');
-    T.$('btn-edit-score').click();
-    T.$('btn-edit-score').click();
+    T.check(T.$('btn-edit-score').dataset.action === 'edit', '알토 음자리표 악보도 [편집] (확장 7부터 모든 악보가 편집기로 열림)');
+    T.deleteScore();
     localStorage.removeItem(Scores.STORAGE_KEY);
     T.$('score-select').value = scores.list()[0].id;
     T.$('score-select').dispatchEvent(new Event('change'));

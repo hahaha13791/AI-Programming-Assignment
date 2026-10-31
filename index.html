@@ -107,29 +107,30 @@
       </div>
     </section>
 
-    <!-- 내 악보 editor: takes the place of the listening, writing and result panels while open. -->
+    <!-- 내 악보 editor (PRD #4-H): takes the place of the listening, writing and result panels while open. -->
     <section class="panel editor" id="editor" aria-labelledby="editor-heading" hidden>
       <h2 id="editor-heading">악보 편집</h2>
-      <div class="editor-meta">
-        <label class="editor-title">
-          <span class="editor-label">제목</span>
-          <input type="text" id="editor-title" maxlength="30" placeholder="악보 제목 (30자까지)" autocomplete="off">
-        </label>
-        <div class="time-signatures" id="editor-times" role="radiogroup" aria-label="박자표"></div>
+      <label class="editor-title">
+        <span class="editor-label">제목</span>
+        <input type="text" id="editor-title" maxlength="100" placeholder="악보 제목" autocomplete="off">
+      </label>
+      <div class="editor-view" id="editor-view"></div>
+      <p class="editor-status" id="editor-status" aria-live="polite"></p>
+      <div class="editor-history">
+        <button type="button" class="btn" id="editor-undo">되돌리기</button>
+        <button type="button" class="btn" id="editor-redo">다시 하기</button>
+        <button type="button" class="btn" id="editor-play" disabled>듣기</button>
       </div>
-      <p class="editor-hint">같은 마디라도 올리거나 내린 음은 ♯/♭을 켜고 찍으세요. 못갖춘마디는 앞을 쉼표로 채우세요.</p>
-      <div class="note-buttons editor-lengths" id="editor-lengths" role="group" aria-label="음 길이"></div>
-      <div class="staff-area editor-pad" id="editor-pad"></div>
-      <div class="staff-controls editor-tools">
-        <div class="accidentals" role="group" aria-label="임시표">
-          <button type="button" class="btn-toggle" id="editor-sharp" aria-pressed="false" aria-label="샵(#)">♯&#xFE0E;</button>
-          <button type="button" class="btn-toggle" id="editor-flat" aria-pressed="false" aria-label="플랫(♭)">♭&#xFE0E;</button>
-        </div>
-        <button type="button" class="btn" id="editor-undo">마지막 음 지우기</button>
-        <button type="button" class="btn" id="editor-clear">전체 지우기</button>
+      <div class="editor-tabs" id="editor-tabs" role="tablist" aria-label="편집 도구">
+        <button type="button" role="tab" id="editor-tab-notes" data-tab="notes" aria-controls="editor-tool-notes" aria-selected="true">음표</button>
+        <button type="button" role="tab" id="editor-tab-measure" data-tab="measure" aria-controls="editor-tool-measure" aria-selected="false">마디</button>
+        <button type="button" role="tab" id="editor-tab-signs" data-tab="signs" aria-controls="editor-tool-signs" aria-selected="false">기호</button>
       </div>
-      <p class="note-preview rhythm-progress" id="editor-progress" aria-live="polite"></p>
-      <div class="staff-area score-area" id="editor-view"></div>
+      <div class="editor-tools" id="editor-tools">
+        <div class="editor-tool" id="editor-tool-notes" role="tabpanel" aria-labelledby="editor-tab-notes" data-tab="notes"></div>
+        <div class="editor-tool" id="editor-tool-measure" role="tabpanel" aria-labelledby="editor-tab-measure" data-tab="measure" hidden></div>
+        <div class="editor-tool" id="editor-tool-signs" role="tabpanel" aria-labelledby="editor-tab-signs" data-tab="signs" hidden></div>
+      </div>
       <div class="staff-controls editor-actions">
         <button type="button" class="btn btn-danger" id="editor-delete">삭제</button>
         <button type="button" class="btn" id="editor-cancel">취소</button>
@@ -200,6 +201,8 @@
   <script src="js/score-input.js"></script>
   <script src="js/unzip.js"></script>
   <script src="js/musicxml.js"></script>
+  <script src="js/editing.js"></script>
+  <script src="js/score-editor.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

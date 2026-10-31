@@ -140,8 +140,7 @@
     const other = scores.list()[0].id;
     T.check(Settings.getLine(other) === 'top', '다른 악보는 그대로 맨 위');
 
-    T.$('btn-edit-score').click();
-    T.$('btn-edit-score').click();
+    T.deleteScore();
     localStorage.removeItem(Scores.STORAGE_KEY);
     localStorage.removeItem(Settings.LINES_KEY);
     T.$('score-select').value = scores.list()[0].id;

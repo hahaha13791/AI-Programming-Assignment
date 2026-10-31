@@ -122,18 +122,10 @@ let unlockTimer = null;
 const scores = Scores.open();
 let scoreId = scores.list()[0]?.id ?? null;
 
-// Why the chosen score can't go to the editor yet (null if it can): notation the expansion 4 editor doesn't write.
-function scoreEditProblem() {
-  const score = scoreId && scores.get(scoreId);
-  return score ? Notation.legacyProblem(score) : null;
-}
-
-// The storage notice comes first; otherwise why 편집 is off for this score.
+// The storage notice comes first; otherwise what the last import changed. (Every score opens in the editor from
+// expansion 7, PRD #4-H.)
 function renderScoreNotice() {
-  const problem = scoreEditProblem();
-  const notice = mode === 'score'
-    ? scores.notice() ?? importNotice ?? (problem && `편집기 밖 표기(${problem})가 있어 편집할 수 없어요`)
-    : null;
+  const notice = mode === 'score' ? scores.notice() ?? importNotice : null;
   $('score-notice').hidden = !notice;
   $('score-notice').textContent = notice ?? '';
   $('score-notice').title = notice ?? '';
@@ -165,20 +157,16 @@ const DELETE_LABEL = '삭제';
 const DELETE_CONFIRM = '한 번 더 누르면 삭제';
 const DELETE_WAIT = 3000;
 
-const editor = Score.createEditor({
-  titleInput: $('editor-title'),
-  timeButtons: $('editor-times'),
-  lengthButtons: $('editor-lengths'),
-  pad: $('editor-pad'),
-  sharpButton: $('editor-sharp'),
-  flatButton: $('editor-flat'),
-  undoButton: $('editor-undo'),
-  clearButton: $('editor-clear'),
-  progress: $('editor-progress'),
+const scoreEditor = ScoreEditor.create({
+  title: $('editor-title'),
   view: $('editor-view'),
-  maxMeasures: Scores.MAX_MEASURES,
+  status: $('editor-status'),
+  undo: $('editor-undo'),
+  redo: $('editor-redo'),
+  tabs: $('editor-tabs'),
+  tools: { notes: $('editor-tool-notes'), measure: $('editor-tool-measure'), signs: $('editor-tool-signs') },
   onChange: () => {
-    $('editor-save').disabled = !editor.canSave();
+    $('editor-save').disabled = !scoreEditor.canSave();
   },
 });
 
@@ -191,12 +179,13 @@ function openEditor(id) {
   $('editor-delete').hidden = !id;
   $('editor').hidden = false;
   $('app').dataset.editing = '';
-  editor.open(id ? Notation.toLegacy(scores.get(id)) : null);
+  scoreEditor.open(id ? scores.get(id) : null);
   renderScorePicker();
 }
 
 function closeEditor() {
   editingId = undefined;
+  scoreEditor.close();
   resetDelete();
   $('editor').hidden = true;
   delete $('app').dataset.editing;
@@ -350,47 +339,20 @@ $('import-file').addEventListener('change', (event) => {
 });
 $('import-parts').addEventListener('change', renderImportLines);
 $('btn-import').addEventListener('click', importChosen);
-// A score the editor can't take yet (TODO 27-5) can still be deleted: 편집 turns into 삭제, confirmed by a second press
-// like the editor's.
-// The picker row is narrow on phones, so its confirm label is short; the screen-reader name says the whole thing.
-const PICKER_DELETE_CONFIRM = '정말 삭제';
-let pickerDeleteTimer = null;
-
+// Every score opens in the editor (expansion 7); deleting is the editor's [삭제].
 function updateEditButton() {
   const button = $('btn-edit-score');
-  const problem = scoreEditProblem();
-  clearTimeout(pickerDeleteTimer);
-  button.classList.remove('is-confirm');
-  button.removeAttribute('aria-label');
-  button.dataset.action = problem ? 'delete' : 'edit';
-  button.textContent = problem ? DELETE_LABEL : '편집';
-  button.classList.toggle('btn-danger', Boolean(problem));
+  button.dataset.action = 'edit';
   button.disabled = !scoreId || editingId !== undefined;
 }
 
 $('btn-edit-score').addEventListener('click', () => {
-  const button = $('btn-edit-score');
-  if (!scoreId) return;
-  if (button.dataset.action !== 'delete') {
-    openEditor(scoreId);
-    return;
-  }
-  if (!button.classList.contains('is-confirm')) {
-    button.classList.add('is-confirm');
-    button.textContent = PICKER_DELETE_CONFIRM;
-    button.setAttribute('aria-label', DELETE_CONFIRM);
-    pickerDeleteTimer = setTimeout(updateEditButton, DELETE_WAIT);
-    return;
-  }
-  scores.remove(scoreId);
-  scoreId = scores.list()[0]?.id ?? null;
-  importNotice = null;
-  backToPractice();
+  if (scoreId) openEditor(scoreId);
 });
 $('editor-cancel').addEventListener('click', backToPractice);
 $('editor-save').addEventListener('click', () => {
-  if (!editor.canSave()) return;
-  const saved = scores.save(Notation.fromLegacy({ ...editor.getScore(), id: editingId ?? undefined }));
+  if (!scoreEditor.canSave()) return;
+  const saved = scores.save({ ...scoreEditor.result(), id: editingId ?? undefined });
   if (!saved) return;
   scoreId = saved.id;
   // A saved score is split again from its first measure (its old section may no longer exist).
@@ -995,6 +957,7 @@ document.addEventListener('pointerdown', (event) => {
   if (!event.target.closest('#new-score, #btn-new-score')) closeNewScore();
 });
 document.addEventListener('keydown', (event) => {
+  if (editingId !== undefined && scoreEditor.key(event)) return;
   if (event.key === 'Escape') {
     closeSettings(true);
     closeNewScore(true);

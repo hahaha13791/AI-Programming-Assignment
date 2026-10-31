@@ -179,24 +179,19 @@ T.test('27-6 반짝반짝 작은 별: 확장 4와 같음', async (T) => {
   T.check(!T.$('btn-edit-score').disabled && T.$('score-notice').hidden, '편집 가능, 안내 없음');
 });
 
-T.test('27-6 편집기 범위 밖 예시', async (T) => {
+// (확장 7부터 모든 악보가 편집기로 열림: 예전의 "편집기 범위 밖 → [삭제]" 대신 [편집].)
+T.test('27-6 새 예시도 편집기로', async (T) => {
   T.setMode('score');
-  const head = () => document.querySelector('.panel-head').getBoundingClientRect().height;
-  const before = head();
   for (const id of ['example-fur-elise', 'example-greensleeves', 'example-mountain-king']) {
     const select = T.$('score-select');
     select.value = id;
     select.dispatchEvent(new Event('change'));
     const button = T.$('btn-edit-score');
-    T.check(!button.disabled && button.textContent === '삭제' && button.dataset.action === 'delete', `${id}: [편집] 자리가 [삭제]`);
-    T.check(!T.$('score-notice').hidden && T.$('score-notice').textContent.includes('편집할 수 없어요'), `이유 안내: "${T.$('score-notice').textContent}"`);
-    // The practice lock (TODO 27~32) is gone from TODO 33: only editing waits for expansion 7.
-    T.check(current && current.length > 0 && !T.$('btn-question').disabled, '연습은 할 수 있음 (편집만 확장 7까지 막힘)');
-    T.check(Math.abs(head() - before) < 0.5, `안내가 보여도 패널 머리 높이가 같음 (${head().toFixed(1)}px)`);
+    T.check(!button.disabled && button.textContent === '편집' && T.$('score-notice').hidden, `${id}: [편집], 안내 없음`);
+    T.check(current && current.length > 0 && !T.$('btn-question').disabled, '연습할 수 있음');
   }
   T.$('score-select').value = 'example-twinkle';
   T.$('score-select').dispatchEvent(new Event('change'));
-  T.check(T.$('score-notice').hidden && T.$('btn-edit-score').textContent === '편집', '편집 가능한 악보로 돌아오면 안내가 사라지고 [편집]');
 });
 
 T.test('27-6 편집기: 만들기·다시 열기·편집·삭제', async (T) => {
@@ -206,13 +201,15 @@ T.test('27-6 편집기: 만들기·다시 열기·편집·삭제', async (T) => 
   T.$('btn-make-score').click(); // 35단계부터 [새 악보]는 작은 창 → 직접 만들기
   T.$('editor-title').value = '새 시험 악보';
   T.$('editor-title').dispatchEvent(new Event('input'));
-  document.querySelector('#editor-times [data-beats="3"]').click();
-  document.querySelector('#editor-lengths [data-type="q"]').click();
-  T.setAccidental(1, 'editor-sharp', 'editor-flat');
-  T.clickStep(3, T.$('editor-pad'));
-  T.setAccidental(0, 'editor-sharp', 'editor-flat');
-  T.clickStep(4, T.$('editor-pad'));
-  document.querySelector('#editor-lengths .is-rest').click();
+  T.check(T.$('editor-save').disabled, '쉼표뿐인 새 악보는 저장할 수 없음');
+  // (음 넣기 화면은 43단계: 그때까지 편집 동작으로 3/4 한 마디를 넣는다.)
+  scoreEditor.apply((s) => {
+    s.measures[0] = { ...s.measures[0], time: [3, 4], notes: [
+      { type: 'quarter', dots: 0, pitch: { step: 'F', alter: 1, octave: 4 } },
+      { type: 'quarter', dots: 0, pitch: { step: 'G', alter: 0, octave: 4 } },
+      { type: 'quarter', dots: 0, rest: true },
+    ] };
+  });
   T.check(!T.$('editor-save').disabled, '3/4 한 마디(파# 솔 쉼표)를 채우면 저장 활성');
   T.$('editor-save').click();
   const saved = scores.list().find((s) => s.title === '새 시험 악보');
@@ -240,25 +237,22 @@ T.test('27-6 새 예시도 지울 수 있음', async (T) => {
   const select = T.$('score-select');
   select.value = 'example-mountain-king';
   select.dispatchEvent(new Event('change'));
-  const button = T.$('btn-edit-score');
-  button.click();
-  T.check(button.textContent === '정말 삭제' && button.getAttribute('aria-label') === '한 번 더 누르면 삭제'
-    && scores.get('example-mountain-king'), '한 번 누르면 확인 문구("정말 삭제"), 아직 지워지지 않음');
-  const row = button.parentElement;
-  T.check(row.scrollWidth <= row.clientWidth + 1 && T.noHorizontalOverflow(), '확인 문구가 떠도 버튼 줄이 넘치지 않음');
-  const selectWidth = select.getBoundingClientRect().width;
-  T.check(selectWidth >= 88, `확인 문구가 떠도 악보 고르기 칸이 줄어들지 않음 (${Math.round(selectWidth)}px)`);
-  T.check(T.$('editor').hidden, '편집기는 열리지 않음');
-  button.click();
+  T.$('btn-edit-score').click();
+  T.$('editor-delete').click();
+  T.check(T.$('editor-delete').textContent === '한 번 더 누르면 삭제' && scores.get('example-mountain-king'), '편집 화면 [삭제]를 한 번 누르면 확인 문구, 아직 지워지지 않음');
+  T.check(T.noHorizontalOverflow(), '가로 넘침 없음');
+  T.$('editor-delete').click();
   T.check(!scores.get('example-mountain-king') && !Scores.open().get('example-mountain-king'), '두 번 눌러 삭제됨 (저장소 포함)');
   // Put it back for the tests that run after this one (the app's list lives on in this page).
   scores.save(EXAMPLE_SCORES.find((s) => s.id === 'example-mountain-king'));
   T.check(scoreId === 'example-twinkle' && T.$('score-select').value === 'example-twinkle', '지운 뒤 첫 악보로 돌아감');
   select.value = 'example-greensleeves';
   select.dispatchEvent(new Event('change'));
-  button.click();
+  T.$('btn-edit-score').click();
+  T.$('editor-delete').click();
   await T.wait(3200);
-  T.check(button.textContent === '삭제' && scores.get('example-greensleeves'), '3초가 지나면 확인 상태가 풀림');
+  T.check(T.$('editor-delete').textContent === '삭제' && scores.get('example-greensleeves'), '3초가 지나면 확인 상태가 풀림');
+  T.$('editor-cancel').click();
   // Back to the first score, as the other tests (smoke.js) expect.
   select.value = 'example-twinkle';
   select.dispatchEvent(new Event('change'));
