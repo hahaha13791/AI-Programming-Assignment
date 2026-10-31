@@ -344,6 +344,19 @@ function pick(pool, previous) {
   return candidates[Math.floor(Math.random() * candidates.length)];
 }
 
+// Until practice works on v2 scores (TODO 33), a score that can't be practised yet is shown whole in place of
+// the input staff, so its drawing can be checked. The 받아 적기 panel keeps its place.
+function showScorePreview(score) {
+  const preview = $('score-preview');
+  preview.hidden = !score;
+  if (mode !== 'rhythm') {
+    $('staff-area').hidden = Boolean(score);
+    $('note-preview').hidden = Boolean(score);
+  }
+  if (score) Sheet.draw(preview, score, { label: `악보 미리 보기, ${score.title}` });
+  else preview.replaceChildren();
+}
+
 function newQuestion() {
   Sound.stop();
   clearTimeout(unlockTimer);
@@ -385,6 +398,7 @@ function newQuestion() {
   }
   $('btn-question').disabled = !current;
   const waiting = mode === 'score' && scoreId && scoreEditProblem();
+  showScorePreview(waiting ? scores.get(scoreId) : null);
   setHint(current ? 'ready' : waiting ? 'pending' : scoreId ? 'noNotes' : 'empty');
 }
 

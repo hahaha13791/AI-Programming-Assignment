@@ -506,6 +506,30 @@ button:focus-visible {
   fill: currentColor;
 }
 
+/* v2 score (sheet.js): one box per row; a row wider than the screen scrolls on its own. */
+.sheet-row {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.sheet-svg {
+  display: block;
+  color: var(--text);
+}
+
+.sv-number {
+  font-size: 10px;
+  fill: var(--text-muted);
+}
+
+.staff-clef.is-small {
+  font-size: 66px;
+}
+
+.sheet-svg .sv-accidental {
+  font-size: 20px;
+}
+
 .sv-open {
   fill: none;
   stroke: currentColor;
