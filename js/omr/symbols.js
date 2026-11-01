@@ -117,10 +117,25 @@
         const sx = x + side * dx;
         for (let dy = -Math.round(s * 0.35); dy <= Math.round(s * 0.35); dy++) {
           if (!ink(page, sx, y + dy)) continue;
-          let up = 0;
-          while (up < s * 6 && ink(page, sx, y + dy - up - 1)) up++;
-          let down = 0;
-          while (down < s * 6 && ink(page, sx, y + dy + down + 1)) down++;
+          // (Over a staff line taken out: a thin printed stem can be cut there.)
+          const gapMax = Math.round(2 + s * 0.15);
+          const extend = (dir) => {
+            let far = 0;
+            let gap = 0;
+            for (let d = 1; d < s * 6; d++) {
+              const yy = Math.round(y + dy + dir * d);
+              if (ink(page, sx, yy)) {
+                far = d;
+                gap = 0;
+              } else {
+                const wasLine = page.removed && yy >= 0 && yy < page.height && page.removed[yy * page.width + Math.round(sx)];
+                if (!wasLine || ++gap > gapMax) break;
+              }
+            }
+            return far;
+          };
+          const up = extend(-1);
+          const down = extend(1);
           const top = y + dy - up;
           const bottom = y + dy + down;
           // (It may go on past the head as far as a chord's other heads.)
@@ -542,8 +557,9 @@
       // are split again without it.
       let all = findHeads(clean, sums, staff, start, staff.right);
       for (const head of all) head.y = posY(staff, head.pos, head.x);
-      // A time signature (at a staff's start or where the time changes): stacked numbers aren't heads.
-      all = all.filter((head) => !stacked(clean, staff, head.x));
+      // A time signature (at a staff's start or where the time changes): stacked numbers aren't heads. (Only hollow
+      // ones: a filled head with a stem and a flag below can look stacked too.)
+      all = all.filter((head) => head.filled || !stacked(clean, staff, head.x));
       for (const head of all) if (!head.stem) head.stem = stemmed(clean, head.x, head.y, s, staff);
       const bars = analysis.barlines[i].filter((bar) => !all.some((head) => head.stem
         && head.stem.x >= bar.x0 - 2 && head.stem.x <= bar.x1 + 2));
@@ -647,7 +663,19 @@
         groups.push({ x0: x, x1: x, top: best.top, bottom: best.bottom });
       }
     }
-    if (groups.length === 1) return groups[0].x0 - p.x0 <= w * 0.4 ? 'flat' : null;
+    if (groups.length === 1) {
+      // A flat: its stroke on the left, only the stroke in its upper half, a bowl reaching right in its lower part.
+      const g = groups[0];
+      if (g.x0 - p.x0 > w * 0.4) return null;
+      const reachRight = (y0, y1) => {
+        let far = p.x0;
+        for (let y = Math.round(y0); y <= Math.round(y1); y++) for (let x = p.x1; x > far; x--) if (ink(clean, x, y)) far = x;
+        return far - p.x0 + 1;
+      };
+      const upper = reachRight(p.y0, p.y0 + h * 0.4);
+      const lower = reachRight(p.y0 + h * 0.6, p.y1);
+      return upper <= Math.max(g.x1 - p.x0 + 2, w * 0.5) && lower >= w * 0.7 ? 'flat' : null;
+    }
     if (groups.length >= 2) {
       const a = groups[0];
       const b = groups[groups.length - 1];
@@ -657,10 +685,51 @@
     return null;
   }
 
-  // The key signature from its pieces (sharps or flats, one after another). → { fifths, sure }
-  function keyOf(clean, header) {
-    const kinds = [...header].map((p) => accidentalOf(clean, p));
+  // The key signature from its pieces (sharps or flats, one after another). Each must stand where the key signature
+  // puts its sharp or flat (F♯ C♯ G♯ … / B♭ E♭ A♭ … for the clef): a piece out of place ends it (a rest, a C).
+  // → { fifths, sure }
+  function keyOf(clean, header, staff = null, clef = 'treble') {
+    // A piece that is no accidental right after one, overlapping it (a flat's bowl parted from its stroke where a
+    // staff line was taken out), belongs to it.
+    const list = [];
+    for (const p of [...header].sort((a, b) => a.x0 - b.x0)) {
+      const last = list[list.length - 1];
+      if (last && !accidentalOf(clean, p) && p.x0 - last.x1 <= Math.max(2, (staff?.space ?? 10) * 0.1) && p.y0 < last.y1 && p.y1 > last.y0) {
+        list[list.length - 1] = { x0: last.x0, x1: Math.max(last.x1, p.x1), y0: Math.min(last.y0, p.y0), y1: Math.max(last.y1, p.y1), count: last.count + p.count };
+      } else {
+        list.push(p);
+      }
+    }
+    if (staff && list.length) {
+      const first = accidentalOf(clean, list[0]);
+      if (first === 'sharp' || first === 'flat') {
+        const sharp = first === 'sharp';
+        const want = Sheet.keySigns({ fifths: sharp ? 7 : -7 }, clef).map((sign) => sign.pos);
+        const placeOf = (p) => {
+          // A sharp's middle is its line or space; a flat's bowl (low in its box) is.
+          const y = sharp ? (p.y0 + p.y1) / 2 : p.y0 + (p.y1 - p.y0) * 0.72;
+          const bottom = OmrStaff.lineY(staff, 4, (p.x0 + p.x1) / 2);
+          return (bottom - y) / (staff.space / 2);
+        };
+        // A C (common time) first, centred on the middle line, isn't a flat: no key's first flat sits there.
+        const centre = (p) => (OmrStaff.lineY(staff, 4, (p.x0 + p.x1) / 2) - (p.y0 + p.y1) / 2) / (staff.space / 2);
+        const tall = (p) => p.y1 - p.y0 + 1 >= staff.space * 1.6;
+        if (!sharp && tall(list[0]) && Math.abs(centre(list[0]) - 4) < 0.4 && clef !== 'alto') list.length = 0;
+        // Where the first one stands says which it is: the ones before it may be hidden in the clef (a photo).
+        let skip = 0;
+        if (list.length) {
+          while (skip < 7 && Math.abs(placeOf(list[0]) - want[skip]) > 1.2) skip++;
+          if (skip >= 7) skip = 0;
+        }
+        let n = 0;
+        while (n < list.length && skip + n < 7 && accidentalOf(clean, list[n]) === first && Math.abs(placeOf(list[n]) - want[skip + n]) <= 1.2) n++;
+        list.length = n;
+        if (n && skip) return { fifths: (sharp ? 1 : -1) * (skip + n), sure: false };
+      }
+    }
+    const kinds = list.map((p) => accidentalOf(clean, p));
     if (!kinds.length) return { fifths: 0, sure: true };
+    if (staff && kinds[0] !== 'sharp' && kinds[0] !== 'flat') return { fifths: 0, sure: true }; // no key signature
     const sharps = kinds.filter((k) => k === 'sharp').length;
     const flats = kinds.filter((k) => k === 'flat').length;
     const n = Math.min(7, kinds.length);
@@ -874,8 +943,15 @@
       const unit = beamUnit(clean, heads.filter((h) => h.filled), s);
       analysis.measures[i].forEach((m, k) => {
         // A stemless hollow "head" with a narrow hole is no whole note (the gap between a rest's hooks, say).
-        m.heads = m.heads.filter((head) => head.filled || head.stem
-          || reach(clean, head.x, head.y, -1, 0, s) + reach(clean, head.x, head.y, 1, 0, s) >= s * 0.4);
+        // Nor one with long upright strokes at its sides (the hole in a natural sign).
+        m.heads = m.heads.filter((head) => {
+          if (head.filled || head.stem) return true;
+          const l = reach(clean, head.x, head.y, -1, 0, s);
+          const r = reach(clean, head.x, head.y, 1, 0, s);
+          if (l + r < s * 0.4) return false;
+          const side = (x) => run(clean, x, head.y, 0, 1, s * 3);
+          return side(head.x - l) < s * 1.3 && side(head.x + r) < s * 1.3;
+        });
         const items = m.heads.map((head) => {
           let type;
           if (!head.filled) type = head.stem ? 'half' : 'whole';
@@ -895,7 +971,10 @@
           // (It may have run into the time signature too: the part is cut into characters at blank columns.)
           const cut = (p) => {
             if (!(p.x0 < clefEnd && p.x1 > clefEnd + s * 0.3)) return [p];
-            return charsIn(clean, Math.ceil(clefEnd), p.y0, p.x1, p.y1, s).map((c) => ({ ...c, count: 1, fromClef: true }));
+            // (The bit touching the cut is still the clef's own edge.)
+            return charsIn(clean, Math.ceil(clefEnd), p.y0, p.x1, p.y1, s)
+              .filter((c) => c.x0 > Math.ceil(clefEnd) + 1)
+              .map((c) => ({ ...c, count: 1, fromClef: true }));
           };
           const candidates = pieces.flatMap(cut)
             .filter((p) => p.x0 >= staff.left + s * 2.4 && (p.x0 + p.x1) / 2 < firstHead - s * 0.8
@@ -904,14 +983,18 @@
           for (const p of candidates) {
             const w = (p.x1 - p.x0 + 1) / s;
             const h = (p.y1 - p.y0 + 1) / s;
-            if (stacked(clean, staff, (p.x0 + p.x1) / 2)) continue;
-            const shaped = h >= 0.8 && h <= 3.2 && w >= 0.3 && w <= 1.1;
+            // The time signature (a pair of numbers, or C / ¢ across the middle line): the key is before it.
+            const mid = OmrStaff.lineY(staff, 2, (p.x0 + p.x1) / 2);
+            const acrossMiddle = p.y0 < mid - s * 0.6 && p.y1 > mid + s * 0.6;
+            if (digitPair(p, pieces, staff) || (acrossMiddle && !accidentalOf(clean, p) && charOf(clean, p).char === 'C')) break;
+            if (h < 0.5 && w < 0.5) continue; // a dot (the bass clef's)
+            const shaped = h >= 0.8 && h <= 3.5 && w >= 0.2 && w <= 1.3;
             if (p.fromClef && !shaped) continue; // what is left of the clef
             if (p.x0 > edge || !shaped) break;
             header.add(p);
             edge = p.x1 + s * 0.9;
           }
-          analysis.keys[i] = keyOf(clean, header);
+          analysis.keys[i] = keyOf(clean, header, staff, analysis.clefs[i].clef);
           if (!analysis.keys[i].sure) m.doubtful = true;
         }
         const key = analysis.keys[i];
@@ -965,6 +1048,9 @@
           const oneHalf = p.y1 <= mid + s * 0.3 || p.y0 >= mid - s * 0.3;
           if (digitPair(p, pieces, staff) || (oneHalf && w >= s * 0.9 && stacked(clean, staff, cx))) continue;
           if (k === 0 && cx < firstHead && stacked(clean, staff, cx)) continue; // part of the time signature
+          // A big sign across the middle line before a staff's first note: a time signature (C, ¢), not a rest.
+          const middle = OmrStaff.lineY(staff, 2, cx);
+          if (k === 0 && cx < firstHead && p.y0 < middle - s * 0.5 && p.y1 > middle + s * 0.5 && h >= s * 1.5) continue;
           // An accidental: right up against a head's left side, at its height.
           const owner = m.heads.find((head) => {
             const left = head.x - run(clean, head.x, head.y, -1, 0, s) + 1;
@@ -1020,5 +1106,5 @@
     });
   }
 
-  window.OmrSymbols = { accidentalOf, keyOf, charOf, timeAt, charsIn, stacked, POS_MIN, POS_MAX, CLEF_SPACES, removeLines, findHeads, findClef, pitchOf, posY, read, integral, components, restOf, digitPair, thinCurves };
+  window.OmrSymbols = { tipRuns, levelsOf, accidentalOf, keyOf, charOf, timeAt, charsIn, stacked, POS_MIN, POS_MAX, CLEF_SPACES, removeLines, findHeads, findClef, pitchOf, posY, read, integral, components, restOf, digitPair, thinCurves };
 })();
