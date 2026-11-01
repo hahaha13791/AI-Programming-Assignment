@@ -758,6 +758,11 @@ button:focus-visible {
   fill: var(--wrong);
 }
 
+.sv-solfege.is-other {
+  fill: var(--text-muted);
+  font-weight: 500;
+}
+
 /* Score view (내 악보): pitch and rhythm on a five-line staff. Notes use currentColor so a measure's mark
    colours it; staff lines and barlines stay in the text colour. */
 .sv-line,

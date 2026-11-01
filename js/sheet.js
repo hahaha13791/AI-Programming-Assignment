@@ -925,11 +925,12 @@
         noteGroup.dataset.index = i;
         if (options.solfege) {
           // Syllables under the note, centred on its head; a mark (true / false) from options.solfegeMarks colours them.
-          const mark = options.solfegeMarks?.(info.index, i);
           (item.solfege ?? []).forEach((l, k) => {
+            const mark = options.solfegeMarks?.(info.index, i, l.head);
+            const markClass = mark === true ? ' is-correct' : mark === false ? ' is-wrong' : mark === 'other' ? ' is-other' : '';
             const text = svgEl('text', {
               x: result.x, y: staffBottom + SOLFEGE_GAP + (k + 1) * SOLFEGE_LINE - 3,
-              class: `sv-solfege${item.grace ? ' is-grace' : ''}${mark === true ? ' is-correct' : mark === false ? ' is-wrong' : ''}`,
+              class: `sv-solfege${item.grace ? ' is-grace' : ''}${markClass}`,
               'data-measure': info.index, 'data-index': i, 'data-head': l.head,
             }, l.text);
             group.append(text);
@@ -1026,8 +1027,8 @@
 
   // score: a v2 score. options: { label, numberFirst (show the number on the first row too), pick (the editor: press
   // areas over the notes, every rest as written), cursor: { measure, note, head } (the editor's chosen note),
-  // solfege: 'movable' | 'fixed' (syllables under the notes, PRD #4-K), solfegeMarks: (measure, note) => true / false
-  // / undefined (colours a note's syllables) }.
+  // solfege: 'movable' | 'fixed' (syllables under the notes, PRD #4-K), solfegeMarks: (measure, note, head) => true /
+  // false / 'other' / undefined (colours a syllable: right, wrong, a chord's other pitch) }.
   // Redrawn when the box crosses the wide/narrow width.
   function draw(container, score, options = {}) {
     container.__sheet = { score, options };

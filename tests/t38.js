@@ -119,7 +119,8 @@
     T.submit();
     T.check(/4음 모두 정답/.test(T.resultText()), `맨 위 음으로 한 사이클 (${T.resultText().slice(0, 14)})`);
     T.check(T.$('result-area').querySelector('.sv-note[data-chord="3"]'), '정답 구간 악보는 화음 그대로');
-    T.check(T.$('result-area').textContent.includes('솔시도도'), `결과 계이름 줄은 맨 위 음 (${T.$('result-area').querySelector('.answer-chips')?.textContent})`);
+    const written = [...T.$('result-area').querySelectorAll('.answer-sheet .sv-solfege:not(.is-other)')].map((c) => c.textContent).join('');
+    T.check(written === '솔시도도', `결과의 받아 적은 음 계이름은 맨 위 음 (${written})`);
 
     T.$('btn-settings').click();
     const box = T.$('settings').getBoundingClientRect();

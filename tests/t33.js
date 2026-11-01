@@ -76,14 +76,15 @@ T.test('33-4 정답 구간 악보', async (T) => {
     .map((g) => `${g.dataset.midi}:${g.querySelector('.sv-accidental')?.dataset.accidental ?? '-'}`).join(' ');
   T.check(marksOf(sheet, 2) === marksOf(box, 2) && marksOf(sheet, 3) === marksOf(box, 3), '악보 보기와 같은 음·임시표');
   box.remove();
-  const chips = [...T.$('result-area').querySelectorAll('.answer-chips .note-chip')].map((c) => c.textContent.replace('✓', '').trim());
+  // 확장 10: the solfège is under the answer section's notes (the chips row is gone).
+  const chips = [...T.$('result-area').querySelectorAll('.answer-sheet .sv-solfege:not(.is-other)')].map((c) => c.textContent);
   T.check(chips[0] === '레#' && chips[4] === '시♭', `정답 계이름은 설정 방식(이동도): E♯ 레#, C♮ 시♭ (${chips.slice(0, 5)})`);
   Settings.set('solfege', 'fixed');
   T.next();
   T.unlock();
   T.enterNotes(current);
   T.submit();
-  const fixedChips = [...T.$('result-area').querySelectorAll('.answer-chips .note-chip')].map((c) => c.textContent.replace('✓', '').trim());
+  const fixedChips = [...T.$('result-area').querySelectorAll('.answer-sheet .sv-solfege:not(.is-other)')].map((c) => c.textContent);
   T.check(section.label === '4마디' && fixedChips[0] === '라', `고정도로 바꾸면 결과도 고정도 (4마디 첫 음 A3: 이동도 솔 → 고정도 ${fixedChips[0]})`);
   Settings.set('solfege', 'movable');
   localStorage.removeItem(Settings.STORAGE_KEY);
@@ -102,10 +103,10 @@ T.test('33-4 긴 구간 결과', async (T) => {
   T.enterNotes(current);
   T.submit();
   const sheet = T.$('result-area').querySelector('.answer-sheet');
-  const chips = T.$('result-area').querySelector('.answer-chips.is-scroll');
   T.check(T.resultText().includes('64음 모두 정답'), '64음 정답');
   T.check(T.noHorizontalOverflow(), '페이지 전체에는 가로 스크롤 없음');
-  T.check(sheet.scrollWidth > sheet.clientWidth && chips.scrollWidth > chips.clientWidth, '정답 악보와 계이름 줄은 좌우로 스크롤');
+  // 확장 10: the solfège is part of the answer sheet, so it scrolls with it.
+  T.check(sheet.scrollWidth > sheet.clientWidth && sheet.querySelectorAll('.sv-solfege').length === 64, '정답 악보(음표 아래 계이름 포함)는 좌우로 스크롤');
   dropScore('long33');
 });
 

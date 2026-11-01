@@ -802,15 +802,15 @@ function renderResult(result) {
     if (mode === 'score') {
       // The section as written (clef, key and time where it starts, its rhythm and measure numbers): the notes
       // were heard in it. One row that scrolls sideways when long, like the solfège under it.
+      // Solfège under its notes (PRD #4-K-4): the written-down line's in the right / wrong colour, a chord's other
+      // pitches grey. It takes the place of the row of solfège chips.
       parts.push(element('h3', 'answer-title', `정답 구간 (${section.label})`));
       answerStaff.classList.add('answer-sheet');
       parts.push(answerStaff);
-      const chips = chipsOf(current, marks.map((mark) => mark || undefined), scoreLabel);
-      chips.classList.add('is-scroll');
-      parts.push(chips);
       area.replaceChildren(...parts, nextButton());
       Sheet.strip(answerStaff, section.sheet, {
-        scale: ANSWER_SCALE, hit: false,
+        scale: ANSWER_SCALE, hit: false, solfege: Settings.get('solfege'),
+        solfegeMarks: answerMarks(section.sheet, chosenLine(chosenScore()), marks),
         label: `정답 구간 악보, ${section.label}. ${current.map(scoreLabel).join(' ')}`,
       });
       return;
@@ -838,6 +838,24 @@ function nextButton() {
 
 // Melody: note by note in order. Enharmonic spellings count as the same pitch.
 // 내 악보: note by note in order, by sounding pitch (enharmonic spellings count as the same).
+// The answer section's notes matched to the written-down pitches, in the same order linePitches takes them (the chosen
+// line of each note, grace notes too, none for a note tied from the one before). Returns solfegeMarks for Sheet:
+// (measure, note, head) → true / false for the head that was written down, 'other' for a chord's other heads.
+function answerMarks(sheet, line, marks) {
+  const written = new Map();
+  let k = 0;
+  sheet.measures.forEach((measure, m) => measure.notes.forEach((note, n) => {
+    const entry = Notation.lineOf(note, line);
+    if (!entry || Notation.tieStops(entry.tie)) return;
+    written.set(`${m}/${n}`, { mark: marks[k++] === true, midi: Notation.midi(entry.pitch) });
+  }));
+  return (m, n, head) => {
+    const hit = written.get(`${m}/${n}`);
+    const pitch = Notation.pitchesOf(sheet.measures[m].notes[n])[head]?.pitch;
+    return hit && pitch && Notation.midi(pitch) === hit.midi ? hit.mark : 'other';
+  };
+}
+
 function gradeScore(input) {
   return { marks: current.map((pitch, i) => Boolean(input[i]) && Notation.midi(pitch) === Notation.midi(input[i])) };
 }

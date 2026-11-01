@@ -102,7 +102,7 @@ T.test('34-3 계이름·빠르기 설정', async (T) => {
   const labels = [...scoreInput.scroller.querySelectorAll('.si-label')].map((l) => l.textContent);
   T.check(labels[0] === '라' && labels[1] === '도', `받아 적기 계이름이 고정도 (A4 라, C5 도: ${labels.slice(0, 2)})`);
   T.submit();
-  const chips = [...T.$('result-area').querySelectorAll('.note-chip')].map((c) => c.textContent.replace('✓', '').trim());
+  const chips = [...T.$('result-area').querySelectorAll('.answer-sheet .sv-solfege:not(.is-other)')].map((c) => c.textContent); // 확장 10: under the answer section's notes
   T.check(chips[0] === '라' && chips[1] === '도', '결과 계이름도 고정도');
   const saved = JSON.parse(localStorage.getItem(Settings.STORAGE_KEY));
   T.check(saved.solfege === 'fixed' && saved.speed === 0.5, '다시 열어도 기억되도록 저장됨');
