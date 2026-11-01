@@ -1665,3 +1665,57 @@ button:focus-visible {
     white-space: nowrap;
   }
 }
+
+/* 인쇄 (PRD #4-K-3): with the 보기 screen open, only its title and the score with solfège go on paper. The score is
+   drawn for the page's width just before printing (app.js beforeprint). */
+@media print {
+  @page {
+    margin: 14mm;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  .app[data-viewing] {
+    max-width: none;
+    padding: 0;
+    gap: 0;
+  }
+
+  .app[data-viewing] > :not(#viewer),
+  .app[data-viewing] .viewer-head,
+  .app[data-viewing] .viewer-note {
+    display: none !important;
+  }
+
+  .app[data-viewing] #viewer {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 0;
+    background: none;
+  }
+
+  .viewer-title {
+    margin: 0 0 6mm;
+    color: #000;
+  }
+
+  /* A row never splits across two pages; nothing scrolls on paper. */
+  .viewer-sheet .sheet-row {
+    overflow: visible;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .viewer-sheet .sheet-svg {
+    max-width: 100%;
+    height: auto;
+    color: #000;
+  }
+
+  .viewer-sheet .sv-solfege {
+    fill: #000;
+  }
+}

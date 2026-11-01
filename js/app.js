@@ -429,6 +429,20 @@ $('btn-view-score').addEventListener('click', () => {
   else if (scoreId) openViewer(scoreId);
 });
 $('viewer-close').addEventListener('click', closeViewer);
+// 인쇄 (PRD #4-K-3): the browser's print window (PDF too). Just before it lays out the page, the score is drawn again
+// for the page's width (four measures to a row); afterwards for the screen again.
+const PRINT_WIDTH = 680; // A4 less the page margins, in CSS pixels
+$('viewer-print').addEventListener('click', () => window.print());
+window.addEventListener('beforeprint', () => {
+  if (viewingId === undefined) return;
+  $('viewer-sheet').style.width = `${PRINT_WIDTH}px`;
+  renderViewer();
+});
+window.addEventListener('afterprint', () => {
+  if (viewingId === undefined || !$('viewer-sheet').style.width) return;
+  $('viewer-sheet').style.width = '';
+  renderViewer();
+});
 $('editor-cancel').addEventListener('click', backToPractice);
 $('editor-save').addEventListener('click', () => {
   if (!scoreEditor.canSave()) return;
