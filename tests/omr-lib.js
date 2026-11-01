@@ -15,6 +15,11 @@ window.OmrTest = (() => {
       const style = getComputedStyle(el);
       const target = to[i];
       for (const prop of STYLE_PROPS) target.style.setProperty(prop, style.getPropertyValue(prop));
+      // Printed music is black: the screen's grey staff lines and coloured marks are drawn black here.
+      for (const prop of ['fill', 'stroke']) {
+        const value = style.getPropertyValue(prop);
+        if (value && value !== 'none' && !/rgba\([^)]*,\s*0\)/.test(value) && value !== 'transparent') target.style.setProperty(prop, '#000');
+      }
       // Press areas and highlights are see-through on screen; leave them out of the picture.
       if (el.classList?.contains('sv-hit') || el.classList?.contains('sv-pick')) target.style.setProperty('visibility', 'hidden');
     });

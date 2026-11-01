@@ -114,6 +114,15 @@
     const staves = clusters
       .filter((c) => c.found.length >= Math.max(3, Math.floor(STRIPS / 4)))
       .map((c) => {
+        // A strip whose five lines are out of line with its neighbours took a ledger line for a staff line: drop it.
+        const mids = c.found.map((f) => f.ys[2]);
+        c.found = c.found.filter((f, i) => {
+          const near = mids.filter((_, j) => j !== i && Math.abs(c.found[j].k - f.k) <= 3);
+          if (near.length < 2) return true;
+          const sorted = [...near].sort((a, b) => a - b);
+          const median = sorted[Math.floor(sorted.length / 2)];
+          return Math.abs(f.ys[2] - median) <= size.space * 0.5;
+        });
         const lines = new Array(STRIPS).fill(null);
         for (const { k, ys } of c.found) if (!lines[k]) lines[k] = ys;
         // Strips without the staff (off its ends, or too full of notes): from the nearest strips that have it.

@@ -24,7 +24,7 @@
       onProgress(i + 1, pages.length);
       await pause();
       if (cancelled()) return null;
-      out.push(OmrStaff.analyse(pages[i]));
+      out.push(OmrSymbols.read(pages[i], OmrStaff.analyse(pages[i])));
       await pause();
       if (cancelled()) return null;
     }
@@ -68,9 +68,13 @@
       for (const system of analysis.systems) {
         const staffIndex = system[Math.min(staffChoice, system.length - 1)];
         const staff = analysis.staves[staffIndex];
-        for (const m of analysis.measures[staffIndex]) {
-          out.push({ page, staff, staffIndex, x0: m.x0, x1: m.x1, end: m.end, notes: m.notes ?? null, doubtful: Boolean(m.doubtful) });
-        }
+        const clef = analysis.clefs?.[staffIndex]?.clef ?? 'treble';
+        analysis.measures[staffIndex].forEach((m, k) => {
+          out.push({
+            page, staff, staffIndex, x0: m.x0, x1: m.x1, end: m.end, notes: m.notes ?? null, doubtful: Boolean(m.doubtful),
+            clef, staffStart: k === 0,
+          });
+        });
       }
     });
     return out;
@@ -84,6 +88,7 @@
     const time = DEFAULT_TIME;
     const length = N.measureLength(time);
     const checks = [];
+    let clef = measures[0].clef;
     const built = measures.map((m, i) => {
       // Until the symbols are read (67단계), a measure is a rest the length of its time.
       const read = m.notes ?? Editing.restsFor(length);
@@ -91,9 +96,14 @@
       if (changed || m.doubtful) checks.push(i);
       const measure = { notes };
       if (m.end === 'double' || m.end === 'final') measure.barline = m.end;
+      // A staff starting with another clef changes it from that measure on.
+      if (i > 0 && m.staffStart && m.clef !== clef) {
+        measure.clef = m.clef;
+        clef = m.clef;
+      }
       return measure;
     });
-    Object.assign(built[0], { time, key: { fifths: 0, mode: 'major' }, clef: 'treble', tempo: TEMPO });
+    Object.assign(built[0], { time, key: { fifths: 0, mode: 'major' }, clef: measures[0].clef, tempo: TEMPO });
     const pickup = N.cmp(N.filled(built[0].notes), length) < 0;
     const result = { title, pickup, measures: built };
     const origins = measures.map((m) => {
