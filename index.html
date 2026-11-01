@@ -108,6 +108,7 @@
             <select class="score-select" id="score-select" aria-label="악보 고르기"></select>
             <button type="button" class="btn btn-small" id="btn-new-score" aria-haspopup="dialog" aria-expanded="false" aria-controls="new-score">새 악보</button>
             <button type="button" class="btn btn-small" id="btn-edit-score">편집</button>
+            <button type="button" class="btn btn-small" id="btn-view-score">보기</button>
           </div>
           <div class="section-chips length-chips" id="length-chips" role="radiogroup" aria-label="구간 길이">
             <button type="button" class="section-chip" role="radio" aria-checked="false" data-length="1">1마디</button>
@@ -119,6 +120,20 @@
           <div class="score-strip" id="score-strip"></div>
         </div>
       </div>
+    </section>
+
+    <!-- 내 악보 보기 (PRD #4-K): the whole score with solfège under the notes, in place of the practice panels. -->
+    <section class="panel viewer" id="viewer" aria-labelledby="viewer-heading" hidden>
+      <div class="viewer-head">
+        <h2 id="viewer-heading">악보 보기</h2>
+        <div class="viewer-actions">
+          <button type="button" class="btn btn-small" id="viewer-print">인쇄</button>
+          <button type="button" class="btn btn-small" id="viewer-close">닫기</button>
+        </div>
+      </div>
+      <p class="viewer-title" id="viewer-title"></p>
+      <p class="viewer-note" id="viewer-note"></p>
+      <div class="viewer-sheet" id="viewer-sheet"></div>
     </section>
 
     <!-- 내 악보 editor (PRD #4-H): takes the place of the listening, writing and result panels while open. -->

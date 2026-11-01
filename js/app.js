@@ -67,8 +67,9 @@ function setHint(key) {
 }
 
 function setMode(next) {
-  // Leaving 내 악보 while editing works like 취소: the unsaved changes are dropped.
+  // Leaving 내 악보 while editing works like 취소: the unsaved changes are dropped. The 보기 screen closes too.
   if (editingId !== undefined) closeEditor();
+  closeViewer();
   mode = next;
   const info = MODES[mode];
   for (const tab of document.querySelectorAll('.mode-tab')) {
@@ -225,6 +226,41 @@ function closeEditor() {
   delete $('app').dataset.editing;
 }
 
+// 보기 (PRD #4-K): the chosen score whole, with solfège under the notes (⚙ 이동도/고정도), in place of practice.
+let viewingId;
+const hasNotes = (score) => Boolean(score?.measures.some((m) => m.notes.some((n) => !n.rest)));
+
+function openViewer(id) {
+  const score = scores.get(id);
+  if (!hasNotes(score)) return;
+  Sound.stop();
+  clearTimeout(unlockTimer);
+  closeNewScore();
+  viewingId = id;
+  $('viewer').hidden = false;
+  $('app').dataset.viewing = '';
+  renderViewer();
+}
+
+function closeViewer() {
+  if (viewingId === undefined) return;
+  viewingId = undefined;
+  $('viewer').hidden = true;
+  $('viewer-sheet').replaceChildren();
+  delete $('app').dataset.viewing;
+}
+
+function renderViewer() {
+  if (viewingId === undefined) return;
+  const score = scores.get(viewingId);
+  const style = Settings.get('solfege');
+  $('viewer-title').textContent = score.title;
+  $('viewer-note').textContent = `계이름: ${style === 'fixed' ? '고정도' : '이동도'} (⚙에서 바꿀 수 있어요)`;
+  Sheet.draw($('viewer-sheet'), score, {
+    solfege: style, numberFirst: true, label: `악보 보기, ${score.title}. 음표 아래에 계이름`,
+  });
+}
+
 // Back to practice on the chosen score, with whatever the store has to say (a failed write).
 function backToPractice() {
   closeEditor();
@@ -359,6 +395,7 @@ async function importFile(file) {
 }
 
 $('btn-new-score').addEventListener('click', () => {
+  closeViewer();
   if ($('new-score').hidden) openNewScore();
   else closeNewScore();
 });
@@ -380,11 +417,18 @@ function updateEditButton() {
   const button = $('btn-edit-score');
   button.dataset.action = 'edit';
   button.disabled = !scoreId || editingId !== undefined;
+  $('btn-view-score').disabled = editingId !== undefined || !hasNotes(scoreId && scores.get(scoreId));
 }
 
 $('btn-edit-score').addEventListener('click', () => {
+  closeViewer();
   if (scoreId) openEditor(scoreId);
 });
+$('btn-view-score').addEventListener('click', () => {
+  if (viewingId === scoreId) closeViewer();
+  else if (scoreId) openViewer(scoreId);
+});
+$('viewer-close').addEventListener('click', closeViewer);
 $('editor-cancel').addEventListener('click', backToPractice);
 $('editor-save').addEventListener('click', () => {
   if (!scoreEditor.canSave()) return;
@@ -950,6 +994,7 @@ $('score-strip').addEventListener('wheel', (event) => {
 }, { passive: false });
 
 $('score-select').addEventListener('change', (event) => {
+  closeViewer();
   scoreId = event.target.value;
   importNotice = null;
   renderScoreNotice();
@@ -1055,6 +1100,7 @@ $('settings').addEventListener('change', (event) => {
   if (event.target.name === 'solfege') {
     Settings.set('solfege', event.target.value);
     scoreInput.setStyle(event.target.value);
+    renderViewer();
   }
   // Another line is another answer: the section starts over.
   if (event.target.name === 'line' && scoreId) {

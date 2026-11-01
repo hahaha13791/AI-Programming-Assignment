@@ -1153,8 +1153,39 @@ button:focus-visible {
 
 /* Score editor (내 악보) */
 
-.app[data-editing] .practice {
+.app[data-editing] .practice,
+.app[data-viewing] .practice {
   display: none;
+}
+
+/* 보기 (내 악보, PRD #4-K): the whole score with solfège. */
+.viewer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.viewer-head h2 {
+  margin: 0;
+}
+
+.viewer-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.viewer-title {
+  margin: var(--space-3) 0 0;
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.viewer-note {
+  margin: var(--space-1) 0 var(--space-3);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
 }
 
 .editor-title {
@@ -1606,6 +1637,16 @@ button:focus-visible {
 
 /* Very small phones (~320px): tighter padding and one-line difficulty labels. */
 @media (max-width: 360px) {
+  /* 내 악보 panel: the score box and [새 악보 | 편집 | 보기] share a row. */
+  .score-row {
+    gap: var(--space-1);
+  }
+
+  .score-row .btn-small {
+    padding-left: var(--space-2);
+    padding-right: var(--space-2);
+  }
+
   .app {
     padding-left: var(--space-3);
     padding-right: var(--space-3);
