@@ -1178,14 +1178,27 @@ button:focus-visible {
 }
 
 
-.note-button[aria-checked="true"] {
+.note-button[aria-checked="true"],
+.note-toggle[aria-pressed="true"] {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
 
 .note-button[aria-checked="true"] .note-icon,
-.note-button[aria-checked="true"] .note-button-label {
+.note-button[aria-checked="true"] .note-button-label,
+.note-toggle[aria-pressed="true"] .note-icon,
+.note-toggle[aria-pressed="true"] .note-button-label {
   color: var(--accent);
+}
+
+/* 심화 셋잇단 button: a 3 like the number over a triplet. */
+.rh-tuplet-icon {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 20px;
+  font-style: italic;
+  font-weight: 700;
+  text-anchor: middle;
+  fill: currentColor;
 }
 
 /* The score being edited: the chosen note (cursor) in the accent colour; each note's share of its measure can be

@@ -638,8 +638,9 @@ function newQuestion() {
     // Hard: the time signature and measure count are part of the answer, so neither is shown.
     const hard = level === 'hard';
     rhythm.reset({
-      // 심화 has its own buttons from 56단계; until then the 기본 hard ones.
-      types: Rhythm.LEVEL_TYPES[advanced ? 'hard' : level],
+      types: Rhythm.LEVEL_TYPES[level],
+      advanced,
+      toggles: Rhythm.LEVEL_TOGGLES[level],
       time: hard ? null : current.time,
       measures: hard ? null : current.measures.length,
       times: advanced ? Rhythm.ADVANCED_TIME_SIGNATURES : Rhythm.TIME_SIGNATURES,
@@ -805,7 +806,7 @@ function gradeHarmony(input) {
 function gradeRhythm(input) {
   const hard = level === 'hard';
   const timeCorrect = Rhythm.sameTime(input.time, current.time);
-  const same = (a = [], b) => a.length === b.length && a.every((note, i) => Rhythm.codeOf(note) === Rhythm.codeOf(b[i]));
+  const same = (a = [], b) => a.length === b.length && a.every((note, i) => Rhythm.noteKey(note) === Rhythm.noteKey(b[i]));
   const marks = current.measures.map((measure, i) => timeCorrect && same(input.measures[i], measure));
   return {
     marks,

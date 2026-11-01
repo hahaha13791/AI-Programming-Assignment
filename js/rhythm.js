@@ -27,6 +27,30 @@
     });
   }
   const QUARTER = N.frac(1, 4);
+
+  // 심화 (PRD #4-J-3): five lengths, and buttons kept on that say what the next notes are.
+  const LENGTHS = {
+    w: { type: 'whole', name: '온음표', short: '온' },
+    h: { type: 'half', name: '2분음표', short: '2분' },
+    q: { type: 'quarter', name: '4분음표', short: '4분' },
+    e: { type: 'eighth', name: '8분음표', short: '8분' },
+    s: { type: '16th', name: '16분음표', short: '16분' },
+  };
+  const TOGGLES = {
+    dot: '점',
+    rest: '쉼표',
+    tuplet: '셋잇단',
+    tie: '붙임줄',
+  };
+  const LEVEL_TOGGLES = { easy: ['dot', 'rest'], medium: ['dot', 'rest', 'tuplet', 'tie'], hard: ['dot', 'rest', 'tuplet', 'tie'] };
+  const TRIPLET = { actual: 3, normal: 2 };
+  // A triplet group is two of its first note's length: eighth triplets fill a quarter, quarter triplets a half.
+  const groupLength = (type) => N.frac(2, N.TYPES[type]);
+  // 9/8 and 12/8 take two measures at most and a phone row each (PRD #4-J-4).
+  const isLong = (time) => Boolean(time) && time[1] === 8 && time[0] >= 9;
+
+  // What a note is for comparing as written: length, dot, rest, triplet, tie.
+  const noteKey = (note) => [note.type, note.dots ?? 0, note.rest ? 'r' : '', note.tuplet ? note.tuplet.actual : '', note.tie ?? ''].join('/');
   const LEVEL_TYPES = {
     easy: ['w', 'h', 'q'],
     medium: ['w', 'h.', 'h', 'q', 'e', 'r'],
@@ -38,6 +62,7 @@
   const timeText = (time) => `${time[0]}/${time[1]}`;
   const sameTime = (a, b) => Boolean(a && b) && a[0] === b[0] && a[1] === b[1];
   const MAX_MEASURES = 4;
+  const LONG_MEASURES = 2;
 
   // Button icons: a note on its own with its stem up.
   const STEM_X = 5.4;
@@ -105,10 +130,11 @@
     if (type === 'h.' || type === 'q.') {
       group.append(svgEl('circle', { cx: x + 12, cy: y - 4, r: 2, class: 'rh-fill rh-dot' }));
     }
-    if (type === 'e' && flag) {
+    for (let k = 0; flag && k < (type === 'e' ? 1 : type === 's' ? 2 : 0); k++) {
+      const t = top + k * 7;
       group.append(svgEl('path', {
-        d: `M${stemX} ${top} C${stemX + 1} ${top + 7} ${stemX + 9} ${top + 9} ${stemX + 7} ${top + 19}`
-          + ` C${stemX + 7} ${top + 12} ${stemX + 3} ${top + 10} ${stemX} ${top + 9} Z`,
+        d: `M${stemX} ${t} C${stemX + 1} ${t + 7} ${stemX + 9} ${t + 9} ${stemX + 7} ${t + 19}`
+          + ` C${stemX + 7} ${t + 12} ${stemX + 3} ${t + 10} ${stemX} ${t + 9} Z`,
         class: 'rh-fill rh-flag',
       }));
     }
@@ -120,7 +146,7 @@
   //          slots (measures to reserve room for), shown (measures to draw), current (measure being filled, or -1),
   //          marks (per measure: true / false, optional) }, wide: four measures to a row when there are more than two.
   function staffOf(model, wide, label) {
-    return Sheet.rhythm(model, wide, { label });
+    return Sheet.rhythm({ ...model, perRow: !wide && isLong(model.time) ? 1 : undefined }, wide, { label });
   }
 
   function draw(container, rhythm, label, { marks } = {}) {
@@ -133,6 +159,16 @@
     const svg = svgEl('svg', { class: 'note-icon', viewBox: '0 0 30 40', 'aria-hidden': 'true' });
     const centred = type === 'w' || type === 'r';
     drawGlyph(svg, type, type === 'w' ? 15 : 11, centred ? 22 : 33);
+    return svg;
+  }
+
+  // The 심화 buttons kept on: a dot, a quarter rest, a 3, a tie.
+  function toggleIcon(name) {
+    const svg = svgEl('svg', { class: 'note-icon', viewBox: '0 0 30 40', 'aria-hidden': 'true' });
+    if (name === 'dot') svg.append(svgEl('circle', { cx: 15, cy: 22, r: 3.2, class: 'rh-fill' }));
+    if (name === 'rest') drawGlyph(svg, 'r', 13, 22);
+    if (name === 'tuplet') svg.append(svgEl('text', { x: 15, y: 30, class: 'rh-tuplet-icon' }, '3'));
+    if (name === 'tie') svg.append(svgEl('path', { d: 'M4 18 Q15 32 26 18 Q15 27 4 18 Z', class: 'rh-fill' }));
     return svg;
   }
 
@@ -150,6 +186,14 @@
     let fixedMeasures = null; // easy/medium: the question's measure count, shown up front
     let locked = true;
     let marks = null;
+    // 심화: which buttons kept on are offered, what they are set to (tie: the next note is tied to the last one),
+    // the triplet group being written ({ base: its first note's type, left }), and the state before each note.
+    let advanced = false;
+    let toggles = [];
+    let opts = { dot: false, rest: false, tuplet: false, tie: false };
+    let group = null;
+    let history = [];
+    let toggleButtons = [];
 
     let wide = isWide(container);
     // Redrawing changes the box's height, so it waits a frame instead of running inside the observer callback.
@@ -182,7 +226,7 @@
 
     let noteButtons = [];
 
-    const maxMeasures = () => fixedMeasures ?? MAX_MEASURES;
+    const maxMeasures = () => fixedMeasures ?? (isLong(time) ? LONG_MEASURES : MAX_MEASURES);
     const measureLength = () => N.measureLength(time);
     // Measures written so far, as a number (whole measures plus the part of the one being filled).
     const done = () => (time ? N.toNumber(lengthOf(notes)) / N.toNumber(measureLength()) : 0);
@@ -194,7 +238,44 @@
       const before = N.mul(measureLength(), N.frac(Math.floor(done() + 1e-9))); // the finished measures
       return N.sub(measureLength(), N.sub(lengthOf(notes), before));
     }
-    const fits = (code) => N.cmp(N.duration(noteOf(code)), remaining()) <= 0;
+    // The note a length button would add now.
+    function make(code) {
+      if (!advanced) return noteOf(code);
+      const { type } = LENGTHS[code];
+      const dots = opts.dot ? 1 : 0;
+      const note = opts.rest ? { type, dots, rest: true } : { type, dots, pitch: { ...PITCH } };
+      if (opts.tuplet) note.tuplet = { ...TRIPLET };
+      return note;
+    }
+    // Whether a length button can add its note: it fits what is left of the measure (and of the triplet group);
+    // a triplet group starts with an eighth or a quarter and fits the measure whole; a quarter-triplet group can also
+    // hold eighths. No dotted 16th (it would need a 32nd), no 16th triplets (PRD 5: 확장 9 범위).
+    function canAdd(code) {
+      if (locked || !time || isFull()) return false;
+      const note = make(code);
+      const length = N.duration(note);
+      if (N.cmp(length, remaining()) > 0) return false;
+      if (!advanced) return true;
+      if (note.dots && note.type === '16th') return false;
+      if (!opts.tuplet) return true;
+      if (group) return (note.type === group.base || (group.base === 'quarter' && note.type === 'eighth')) && N.cmp(length, group.left) <= 0;
+      return (note.type === 'quarter' || note.type === 'eighth') && N.cmp(groupLength(note.type), remaining()) <= 0;
+    }
+    function canToggle(name) {
+      if (locked || !time || isFull()) return false;
+      if (name === 'tuplet') return !group; // a group can't be left half-written
+      if (name === 'dot') return !opts.tuplet;
+      if (name === 'rest') return !opts.tie; // a tie goes into a note
+      const last = notes[notes.length - 1];
+      return opts.tie || Boolean(last && !last.rest && !N.tieStarts(last.tie));
+    }
+    const snapshot = () => ({ notes: JSON.parse(JSON.stringify(notes)), opts: { ...opts }, group: group && { ...group } });
+    function clearInput() {
+      notes = [];
+      opts = { dot: false, rest: false, tuplet: false, tie: false };
+      group = null;
+      history = [];
+    }
 
     function canSubmit() {
       if (!time || notes.length === 0) return false;
@@ -207,7 +288,7 @@
       if (fixedMeasures) return fixedMeasures;
       if (!time) return 1;
       if (marks) return Math.max(1, Math.ceil(done() - 1e-9));
-      return Math.min(MAX_MEASURES, Math.floor(done() + 1e-9) + 1);
+      return Math.min(maxMeasures(), Math.floor(done() + 1e-9) + 1);
     }
 
     function progressText() {
@@ -217,7 +298,20 @@
       if (!fixedMeasures && notes.length && whole(done())) {
         return `${Math.round(done())}마디 완성 · 이어서 적거나 제출하세요.`;
       }
-      return `${Math.floor(done() + 1e-9) + 1}마디 · 남은 박 ${beatsText(remaining())}`;
+      return `${Math.floor(done() + 1e-9) + 1}마디 · ${leftText()}`;
+    }
+
+    // What is left: in a triplet group the notes still to come, in x/8 time eighths, otherwise quarter beats.
+    function leftText() {
+      if (group) {
+        const count = N.toNumber(group.left) / N.toNumber(N.duration({ type: group.base, dots: 0, tuplet: TRIPLET }));
+        return `셋잇단 ${Math.round(count * 100) / 100}개 더`;
+      }
+      if (time[1] === 8) {
+        const eighths = N.toNumber(remaining()) * 8;
+        return `남은 8분음표 ${Math.round(eighths * 100) / 100}개`;
+      }
+      return `남은 박 ${beatsText(remaining())}`;
     }
 
     // The measure being filled is highlighted while input is open.
@@ -227,6 +321,7 @@
     }
 
     function update() {
+      if (container.clientWidth) wide = isWide(container); // on the page now: its own width, not the window's guess
       const svg = staffOf({
         time,
         measures: time ? splitMeasures(notes, measureLength()) : [],
@@ -238,7 +333,12 @@
       container.replaceChildren(svg);
 
       for (const button of noteButtons) {
-        button.disabled = locked || !time || !fits(button.dataset.type);
+        button.disabled = !canAdd(button.dataset.type);
+      }
+      for (const button of toggleButtons) {
+        const name = button.dataset.toggle;
+        button.disabled = !canToggle(name);
+        button.setAttribute('aria-pressed', String(opts[name]));
       }
       for (const button of timeButtonList) {
         button.disabled = locked;
@@ -250,36 +350,74 @@
       onChange?.();
     }
     function add(code) {
-      if (locked || !time || !fits(code)) return;
-      notes.push(noteOf(code));
+      if (!canAdd(code)) return;
+      history.push(snapshot());
+      const note = make(code);
+      if (advanced) {
+        if (opts.tie && !note.rest) {
+          const last = notes[notes.length - 1];
+          last.tie = last.tie === 'stop' ? 'both' : 'start';
+          note.tie = 'stop';
+        }
+        opts.tie = false;
+        if (opts.tuplet) {
+          if (!group) {
+            group = { base: note.type, left: groupLength(note.type) };
+            note.tupletStart = true;
+          }
+          group.left = N.sub(group.left, N.duration(note));
+          if (N.cmp(group.left, N.ZERO) === 0) {
+            note.tupletStop = true;
+            group = null;
+            opts.tuplet = false;
+          }
+        }
+      }
+      notes.push(note);
+      update();
+    }
+
+    function toggle(name) {
+      if (!canToggle(name)) return;
+      opts[name] = !opts[name];
+      if (name === 'tuplet' && opts.tuplet) opts.dot = false;
+      if (name === 'tie' && opts.tie) opts.rest = false;
       update();
     }
 
     function setTime(next) {
       if (locked || !chooseTime || sameTime(next, time)) return;
       time = next;
-      notes = [];
+      clearInput();
       update();
     }
 
+    // Undo puts back everything as it was before the last note: the tie into it, its triplet group, the buttons.
     undoButton.addEventListener('click', () => {
-      if (locked) return;
-      notes.pop();
+      if (locked || !notes.length) return;
+      if (advanced && history.length) {
+        ({ notes, opts, group } = history.pop());
+      } else {
+        notes.pop();
+      }
       update();
     });
     clearButton.addEventListener('click', () => {
       if (locked) return;
-      notes = [];
+      clearInput();
       update();
     });
 
     return {
-      // options: { types: note types to offer, time: [beats, beatType] (null: the user picks it from `times`),
+      // options: { types: 기본 note buttons to offer, or advanced: true with toggles (심화: the five lengths and those
+      //            buttons kept on), time: [beats, beatType] (null: the user picks it from `times`),
       //            measures: count or null, times: time signatures to choose from (default 2/4·3/4·4/4) }
       reset(options) {
-        notes = [];
+        clearInput();
         marks = null;
-        types = options.types;
+        advanced = Boolean(options.advanced);
+        toggles = advanced ? options.toggles ?? [] : [];
+        types = advanced ? Object.keys(LENGTHS) : options.types;
         time = options.time ?? null;
         chooseTime = time === null;
         fixedMeasures = options.measures ?? null;
@@ -290,17 +428,33 @@
           button.type = 'button';
           button.className = 'note-button';
           button.dataset.type = type;
-          button.setAttribute('aria-label', TYPES[type].name);
+          const info = advanced ? LENGTHS[type] : TYPES[type];
+          button.setAttribute('aria-label', info.name);
           const text = document.createElement('span');
           text.className = 'note-button-label';
-          text.textContent = TYPES[type].short;
+          text.textContent = info.short;
           button.append(iconFor(type), text);
           button.addEventListener('click', () => add(type));
           return button;
         });
-        buttons.style.setProperty('--cols', types.length);
-        buttons.style.setProperty('--phone-cols', Math.min(types.length, 4));
-        buttons.replaceChildren(...noteButtons);
+        toggleButtons = toggles.map((name) => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'note-button note-toggle';
+          button.dataset.toggle = name;
+          button.setAttribute('aria-pressed', 'false');
+          button.setAttribute('aria-label', TOGGLES[name]);
+          const text = document.createElement('span');
+          text.className = 'note-button-label';
+          text.textContent = TOGGLES[name];
+          button.append(toggleIcon(name), text);
+          button.addEventListener('click', () => toggle(name));
+          return button;
+        });
+        const count = noteButtons.length + toggleButtons.length;
+        buttons.style.setProperty('--cols', count);
+        buttons.style.setProperty('--phone-cols', advanced ? 5 : Math.min(count, 4));
+        buttons.replaceChildren(...noteButtons, ...toggleButtons);
         update();
       },
       setLocked(value) {
@@ -357,7 +511,7 @@
   }
 
   window.Rhythm = {
-    create, draw, schedule, iconFor, beatsText, noteOf, codeOf, timeText, sameTime,
-    TYPES, LEVEL_TYPES, TIME_SIGNATURES, ADVANCED_TIME_SIGNATURES, lengthOf, splitMeasures,
+    create, draw, schedule, iconFor, beatsText, noteOf, codeOf, noteKey, timeText, sameTime,
+    TYPES, LENGTHS, LEVEL_TYPES, LEVEL_TOGGLES, TIME_SIGNATURES, ADVANCED_TIME_SIGNATURES, lengthOf, splitMeasures,
   };
 })();

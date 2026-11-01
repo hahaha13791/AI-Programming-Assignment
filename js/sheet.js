@@ -1023,11 +1023,12 @@
   // The one-line rhythm staff (리듬 모드), drawn as one SVG that scales with its box. Room is kept for `slots`
   // measures (rows not drawn yet stay empty, so the box doesn't grow while writing); `shown` measures are drawn.
   // model: { time: [beats, beatType] | null (not chosen yet: no time signature), measures: [[note, ...], ...],
-  //          slots, shown, current (measure being written, or -1), marks (per measure: true / false / undefined) }
+  //          slots, shown, current (measure being written, or -1), marks (per measure: true / false / undefined),
+  //          perRow (optional: measures to a row) }
   // wide: up to four measures to a row instead of two. Returns the SVG (class rhythm-staff).
   function rhythm(model, wide, options = {}) {
     const width = wide ? WIDTH.wide : WIDTH.narrow;
-    const perRow = !wide || model.slots <= 2 ? 2 : 4;
+    const perRow = model.perRow ?? (!wide || model.slots <= 2 ? 2 : 4);
     const time = model.time ?? [4, 4];
     const infos = [];
     for (let i = 0; i < model.shown; i++) {

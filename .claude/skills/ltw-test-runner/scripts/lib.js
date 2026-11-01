@@ -157,6 +157,22 @@
       const text = typeof time === 'number' ? `${time}/4` : Array.isArray(time) ? `${time[0]}/${time[1]}` : time;
       document.querySelector(`#time-signatures .time-signature[data-time="${text}"]`).click();
     },
+    // 심화: enters notes of the score format with the length buttons and the buttons kept on (점·쉼표·셋잇단·붙임줄).
+    enterAdvanced(notes) {
+      const codes = { whole: 'w', half: 'h', quarter: 'q', eighth: 'e', '16th': 's' };
+      const toggle = (name) => document.querySelector(`#note-buttons .note-toggle[data-toggle="${name}"]`);
+      const set = (name, on) => {
+        const button = toggle(name);
+        if (button && (button.getAttribute('aria-pressed') === 'true') !== on) button.click();
+      };
+      for (const note of notes) {
+        if (note.tupletStart) set('tuplet', true);
+        if (!note.tuplet) set('dot', Boolean(note.dots));
+        if (note.tie === 'stop' || note.tie === 'both') set('tie', true);
+        set('rest', Boolean(note.rest));
+        document.querySelector(`#note-buttons .note-button[data-type="${codes[note.type]}"]`).click();
+      }
+    },
     // 리듬 [기본 | 심화].
     setRhythmKind(kind) {
       document.querySelector(`#rhythm-kinds .chord-type[data-kind="${kind}"]`).click();
