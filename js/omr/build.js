@@ -13,6 +13,8 @@
   const MESSAGES = {
     noStaff: '오선을 찾지 못했어요. 종이 모서리를 고치거나, 더 밝고 반듯하게 찍어 주세요.',
     unsupported: '붙임줄·잇단음표·화음 등은 아직 읽지 못해요. 편집기에서 넣어 주세요',
+    major: '장조·단조는 사진으로 알 수 없어 장조로 두었어요',
+    noTime: '박자표를 찾지 못해 4/4로 두었어요',
   };
 
   const pause = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -74,6 +76,7 @@
           out.push({
             page, staff, staffIndex, x0: m.x0, x1: m.x1, end: m.end, notes: m.notes ?? null, doubtful: Boolean(m.doubtful),
             unsupported: Boolean(m.unsupported), clef, staffStart: k === 0,
+            key: k === 0 ? analysis.keys?.[staffIndex]?.fifths ?? 0 : null, time: m.time ?? null, timeUnread: Boolean(m.timeUnread),
           });
         });
       }
@@ -86,16 +89,28 @@
   function score(analyses, { staffChoice = 0, title = '' } = {}) {
     const measures = collect(analyses, staffChoice);
     if (!measures.length) throw new OmrError(MESSAGES.noStaff);
-    const time = DEFAULT_TIME;
-    const length = N.measureLength(time);
+    const firstTime = measures[0].time;
+    let time = firstTime?.time ?? DEFAULT_TIME;
+    let key = measures[0].key ?? 0;
     const checks = [];
     let clef = measures[0].clef;
     const built = measures.map((m, i) => {
-      // Until the symbols are read (67단계), a measure is a rest the length of its time.
+      const measure = {};
+      // A time signature further on changes the time from there; a staff starting with another key changes the key.
+      if (i > 0 && m.time && `${m.time.time}` !== `${time}`) {
+        time = m.time.time;
+        measure.time = time;
+        if (m.time.symbol) measure.timeSymbol = m.time.symbol;
+      }
+      if (i > 0 && m.staffStart && m.key !== null && m.key !== key) {
+        key = m.key;
+        measure.key = { fifths: key, mode: 'major' };
+      }
+      const length = N.measureLength(time);
       const read = m.notes ?? Editing.restsFor(length);
       const { notes, changed } = fit(read, length, { first: i === 0, last: i === measures.length - 1 });
-      if (changed || m.doubtful) checks.push(i);
-      const measure = { notes };
+      if (changed || m.doubtful || (m.timeUnread && i > 0)) checks.push(i);
+      measure.notes = notes;
       if (m.end === 'double' || m.end === 'final') measure.barline = m.end;
       // A staff starting with another clef changes it from that measure on.
       if (i > 0 && m.staffStart && m.clef !== clef) {
@@ -104,8 +119,11 @@
       }
       return measure;
     });
-    Object.assign(built[0], { time, key: { fifths: 0, mode: 'major' }, clef: measures[0].clef, tempo: TEMPO });
-    const pickup = N.cmp(N.filled(built[0].notes), length) < 0;
+    Object.assign(built[0], {
+      time: firstTime?.time ?? DEFAULT_TIME, key: { fifths: measures[0].key ?? 0, mode: 'major' }, clef: measures[0].clef, tempo: TEMPO,
+    });
+    if (firstTime?.symbol) built[0].timeSymbol = firstTime.symbol;
+    const pickup = N.cmp(N.filled(built[0].notes), N.measureLength(built[0].time)) < 0;
     const result = { title, pickup, measures: built };
     const origins = measures.map((m) => {
       const pad = m.staff.space * 2.5;
@@ -117,7 +135,11 @@
         y1: OmrStaff.lineY(m.staff, 4, (m.x0 + m.x1) / 2) + pad,
       };
     });
-    const notices = [`제목은 파일 이름으로, 빠르기는 ♩= ${TEMPO}로 두었어요`];
+    const notices = [`제목은 파일 이름으로, 빠르기는 ♩= ${TEMPO}로 두었어요`, MESSAGES.major];
+    if (!firstTime) {
+      notices.push(MESSAGES.noTime);
+      if (!checks.includes(0)) checks.unshift(0);
+    }
     if (measures.some((m) => m.unsupported)) notices.push(MESSAGES.unsupported);
     return { score: N.clean(result), checks, notices, origins };
   }

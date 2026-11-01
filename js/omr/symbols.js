@@ -127,7 +127,7 @@
           const fits = side === 1 ? top <= y - s * STEM_MIN && bottom <= y + s * 4 : bottom >= y + s * STEM_MIN && top >= y - s * 4;
           // A line exactly from the top line to the bottom line is a barline, not a stem — unless this head sits right
           // at its end (a stem that happens to span the staff).
-          const atEnd = side === 1 ? Math.abs(bottom - y) <= s * 0.6 : Math.abs(top - y) <= s * 0.6;
+          const atEnd = side === 1 ? Math.abs(bottom - y) <= s * 0.3 : Math.abs(top - y) <= s * 0.3;
           const barline = staff && !atEnd && Math.abs(top - OmrStaff.lineY(staff, 0, sx)) <= s * 0.35
             && Math.abs(bottom - OmrStaff.lineY(staff, 4, sx)) <= s * 0.35;
           if (fits && !barline && (!best || bottom - top > best.bottom - best.top)) best = { x: sx, top, bottom };
@@ -374,7 +374,7 @@
 
   // A solid piece at least a space wide and tall with no head in it: something not read (a smudge, a symbol the
   // reading doesn't know).
-  function unreadIn(pieces, staff, x0, x1, heads) {
+  function unreadIn(pieces, staff, x0, x1, heads, clean) {
     const s = staff.space;
     return pieces.some((p) => {
       const cx = (p.x0 + p.x1) / 2;
@@ -383,6 +383,7 @@
       const w = p.x1 - p.x0 + 1;
       const h = p.y1 - p.y0 + 1;
       if (w < s * 0.8 || h < s * 0.8 || p.count / (w * h) < 0.6) return false;
+      if (clean && stacked(clean, staff, cx)) return false; // a time signature's number
       return !heads.some((head) => head.x >= p.x0 && head.x <= p.x1 && head.y >= p.y0 && head.y <= p.y1);
     });
   }
@@ -553,7 +554,7 @@
       analysis.measures[i].forEach((m, k) => {
         const from = k === 0 ? Math.max(m.x0, start) : m.x0 + s * 0.3;
         const heads = all.filter((head) => head.x >= from && head.x <= m.x1 - s * 0.3);
-        let doubtful = (!sure && k === 0) || unreadIn(pieces, staff, from, m.x1, heads);
+        let doubtful = (!sure && k === 0) || unreadIn(pieces, staff, from, m.x1, heads, clean);
         // Heads one above another (within a head's width) share a stem: a chord. The top one is kept.
         const singles = [];
         for (const head of heads) {
@@ -612,8 +613,248 @@
       .filter((p) => {
         const w = p.x1 - p.x0 + 1;
         const h = p.y1 - p.y0 + 1;
-        return w >= s * 0.45 && h >= 2 && h < s && h <= w * 0.45; // long and flat
+        return w >= s * 0.35 && h >= 2 && h < s && h <= w * 0.45; // long and flat
       });
+  }
+
+  // ---- key signature, accidentals, time signature (PRD #4-L-3, 69단계) ----
+  const ALTERS = { sharp: 1, flat: -1, natural: 0 };
+
+  // An accidental's kind from its piece, by its upright strokes: a flat has one (on its left, with a bowl), a sharp
+  // and a natural two — the natural's left one higher, the sharp's right one. → 'sharp' | 'flat' | 'natural' | null
+  function accidentalOf(clean, p) {
+    const w = p.x1 - p.x0 + 1;
+    const h = p.y1 - p.y0 + 1;
+    const groups = [];
+    for (let x = p.x0; x <= p.x1; x++) {
+      let best = null;
+      let start = -1;
+      for (let y = p.y0; y <= p.y1 + 1; y++) {
+        const on = y <= p.y1 && ink(clean, x, y);
+        if (on && start < 0) start = y;
+        if (!on && start >= 0) {
+          if (!best || y - start > best.bottom - best.top + 1) best = { top: start, bottom: y - 1 };
+          start = -1;
+        }
+      }
+      if (!best || best.bottom - best.top + 1 < h * 0.6) continue;
+      const last = groups[groups.length - 1];
+      if (last && x - last.x1 <= 1) {
+        last.x1 = x;
+        last.top = Math.min(last.top, best.top);
+        last.bottom = Math.max(last.bottom, best.bottom);
+      } else {
+        groups.push({ x0: x, x1: x, top: best.top, bottom: best.bottom });
+      }
+    }
+    if (groups.length === 1) return groups[0].x0 - p.x0 <= w * 0.4 ? 'flat' : null;
+    if (groups.length >= 2) {
+      const a = groups[0];
+      const b = groups[groups.length - 1];
+      // A natural's left stroke sits higher than its right one; a sharp's right stroke is the higher (or level).
+      return (a.top + a.bottom) / 2 < (b.top + b.bottom) / 2 - h * 0.05 ? 'natural' : 'sharp';
+    }
+    return null;
+  }
+
+  // The key signature from its pieces (sharps or flats, one after another). → { fifths, sure }
+  function keyOf(clean, header) {
+    const kinds = [...header].map((p) => accidentalOf(clean, p));
+    if (!kinds.length) return { fifths: 0, sure: true };
+    const sharps = kinds.filter((k) => k === 'sharp').length;
+    const flats = kinds.filter((k) => k === 'flat').length;
+    const n = Math.min(7, kinds.length);
+    if (sharps === kinds.length) return { fifths: n, sure: true };
+    if (flats === kinds.length) return { fifths: -n, sure: true };
+    return { fifths: sharps >= flats ? n : -n, sure: false };
+  }
+
+  // Shapes of the numbers 0–9 and C, drawn once in the browser (a bold serif, like printed time signatures), each
+  // as a GRID_W × GRID_H grid of ink shares.
+  const GRID_W = 10;
+  const GRID_H = 14;
+  let templates = null;
+  function gridOf(bits, width, x0, y0, x1, y1) {
+    const out = new Float32Array(GRID_W * GRID_H);
+    const w = x1 - x0 + 1;
+    const h = y1 - y0 + 1;
+    for (let gy = 0; gy < GRID_H; gy++) {
+      for (let gx = 0; gx < GRID_W; gx++) {
+        const ax = x0 + Math.floor((gx * w) / GRID_W);
+        const bx = x0 + Math.max(Math.floor(((gx + 1) * w) / GRID_W), Math.floor((gx * w) / GRID_W) + 1) - 1;
+        const ay = y0 + Math.floor((gy * h) / GRID_H);
+        const by = y0 + Math.max(Math.floor(((gy + 1) * h) / GRID_H), Math.floor((gy * h) / GRID_H) + 1) - 1;
+        let sum = 0;
+        let n = 0;
+        for (let y = ay; y <= by; y++) for (let x = ax; x <= bx; x++, n++) sum += bits[y * width + x];
+        out[gy * GRID_W + gx] = n ? sum / n : 0;
+      }
+    }
+    return out;
+  }
+  function templateSet() {
+    if (templates) return templates;
+    templates = [];
+    for (const char of ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'C']) {
+      const canvas = OmrImage.canvasOf(64, 80);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, 64, 80);
+      ctx.fillStyle = '#000';
+      ctx.font = 'bold 56px Georgia, "Times New Roman", serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(char, 32, 42);
+      const g = OmrImage.gray(canvas);
+      const bits = new Uint8Array(g.data.length);
+      let x0 = Infinity;
+      let y0 = Infinity;
+      let x1 = -1;
+      let y1 = -1;
+      for (let i = 0; i < bits.length; i++) {
+        if (g.data[i] < 128) {
+          bits[i] = 1;
+          const x = i % g.width;
+          const y = (i - x) / g.width;
+          x0 = Math.min(x0, x);
+          x1 = Math.max(x1, x);
+          y0 = Math.min(y0, y);
+          y1 = Math.max(y1, y);
+        }
+      }
+      if (x1 >= 0) templates.push({ char, grid: gridOf(bits, g.width, x0, y0, x1, y1), aspect: (x1 - x0 + 1) / (y1 - y0 + 1) });
+    }
+    return templates;
+  }
+
+  // The character a piece looks most like (of 0–9 and C, or of `allowed`), comparing ink grids and shape.
+  function charOf(clean, p, allowed = null) {
+    const grid = gridOf(clean.bits, clean.width, p.x0, p.y0, p.x1, p.y1);
+    const aspect = (p.x1 - p.x0 + 1) / (p.y1 - p.y0 + 1);
+    let best = null;
+    for (const t of templateSet()) {
+      if (allowed && !allowed.includes(t.char)) continue;
+      let diff = 0;
+      for (let i = 0; i < grid.length; i++) diff += Math.abs(grid[i] - t.grid[i]);
+      diff = diff / grid.length + Math.abs(Math.log(aspect / t.aspect)) * 0.6;
+      if (!best || diff < best.diff) best = { char: t.char, diff };
+    }
+    return best;
+  }
+
+  const TIMES = ['2/4', '3/4', '4/4', '6/8', '9/8', '12/8', '2/2', '3/8', '5/4', '6/4', '3/2', '2/8'];
+
+  // The ink between x0 and x1, y0 and y1 cut at blank columns into characters: [{ x0, y0, x1, y1 }] (each with its
+  // own top and bottom). Taking staff lines out may break a number into bits; this puts them back together.
+  function charsIn(clean, x0, y0, x1, y1, s) {
+    x0 = Math.max(0, Math.round(x0));
+    x1 = Math.min(clean.width - 1, Math.round(x1));
+    y0 = Math.max(0, Math.round(y0));
+    y1 = Math.min(clean.height - 1, Math.round(y1));
+    const used = [];
+    for (let x = x0; x <= x1; x++) {
+      let any = false;
+      for (let y = y0; y <= y1 && !any; y++) any = ink(clean, x, y);
+      used.push(any);
+    }
+    const out = [];
+    let start = -1;
+    let blank = 0;
+    const gap = Math.max(2, Math.round(s * 0.1));
+    const close = (end) => {
+      if (end - start + 1 >= s * 0.3) {
+        // Its top and bottom: rows with more than a stray pixel or two (a bit left of a staff line).
+        let top = Infinity;
+        let bottom = -1;
+        const least = Math.max(2, (end - start + 1) * 0.15);
+        for (let y = y0; y <= y1; y++) {
+          let n = 0;
+          for (let x = x0 + start; x <= x0 + end; x++) if (ink(clean, x, y)) n++;
+          if (n >= least) {
+            top = Math.min(top, y);
+            bottom = Math.max(bottom, y);
+          }
+        }
+        if (bottom - top + 1 >= s * 0.6) out.push({ x0: x0 + start, x1: x0 + end, y0: top, y1: bottom });
+      }
+      start = -1;
+    };
+    used.forEach((on, i) => {
+      if (on) {
+        if (start < 0) start = i;
+        blank = 0;
+      } else if (start >= 0 && ++blank >= gap) close(i - blank);
+    });
+    if (start >= 0) close(used.length - 1 - blank);
+    return out;
+  }
+
+  // A time signature whose numbers sit between x0 and x1 on the staff. → { time, symbol } or null
+  function timeAt(clean, pieces, staff, x0, x1) {
+    const s = staff.space;
+    const cx = (x0 + x1) / 2;
+    const top = OmrStaff.lineY(staff, 0, cx);
+    const mid = OmrStaff.lineY(staff, 2, cx);
+    const bottom = OmrStaff.lineY(staff, 4, cx);
+    const number = (from, to, a = x0, b = x1) => {
+      const chars = charsIn(clean, a, from, b, to, s);
+      if (!chars.length) return null;
+      const text = chars.map((c) => charOf(clean, c, '0123456789')?.char ?? '').join('');
+      return /^\d+$/.test(text) ? Number(text) : null;
+    };
+    // The two numbers meet near the middle line: split them at the blank row nearest it.
+    let split = mid;
+    let parted = false;
+    for (let d = 0; d <= s * 0.6; d++) {
+      const rows = [mid - d, mid + d].map(Math.round);
+      const blank = rows.find((y) => {
+        for (let x = Math.round(x0); x <= Math.round(x1); x++) if (ink(clean, x, y)) return false;
+        return true;
+      });
+      if (blank !== undefined) {
+        split = blank;
+        parted = true;
+        break;
+      }
+    }
+    // The two numbers stand one over the other: each is read only under (or over) the other's columns (a beam or note
+    // close after them stays out).
+    const upChars = charsIn(clean, x0, top - s * 0.4, x1, split, s);
+    const loChars = charsIn(clean, x0, split, x1, bottom + s * 0.4, s);
+    const span = (chars) => chars.length ? [chars[0].x0 - s * 0.3, chars[chars.length - 1].x1 + s * 0.3] : [x0, x1];
+    const [ua, ub] = span(loChars);
+    const [la, lb] = span(upChars);
+    const upper = number(top - s * 0.4, split, Math.max(x0, ua), Math.min(x1, ub));
+    const lower = number(split, bottom + s * 0.4, Math.max(x0, la), Math.min(x1, lb));
+    if (upper && lower && TIMES.includes(`${upper}/${lower}`)) return { time: [upper, lower] };
+    if (parted) return null; // two numbers, not read
+    // C or ¢: one sign across the middle line (¢ with a line through it reaching past the staff).
+    // (¢'s line through it runs on past the staff: those columns are left out before comparing with C.)
+    const ax = Math.max(0, Math.round(x0));
+    const bx = Math.min(clean.width - 1, Math.round(x1));
+    const past = (x) => [top - s * 0.4, bottom + s * 0.4].some((y) => ink(clean, x, y) || ink(clean, x, y - 1) || ink(clean, x, y + 1));
+    const lineCols = [];
+    for (let x = ax; x <= bx; x++) if (past(x)) lineCols.push(x);
+    const width = bx - ax + 1;
+    const y0 = Math.max(0, Math.round(top - s * 0.4));
+    const y1 = Math.min(clean.height - 1, Math.round(bottom + s * 0.4));
+    const part = { width, height: y1 - y0 + 1, bits: new Uint8Array(width * (y1 - y0 + 1)) };
+    for (let y = y0; y <= y1; y++) {
+      for (let x = ax; x <= bx; x++) {
+        if (!lineCols.includes(x) && ink(clean, x, y)) part.bits[(y - y0) * width + (x - ax)] = 1;
+      }
+    }
+    let whole = charsIn(part, 0, 0, width - 1, part.height - 1, s);
+    // (Taking ¢'s line out leaves its C in two: put them back as one sign.)
+    if (lineCols.length && whole.length > 1) {
+      whole = [whole.reduce((a, b) => ({ x0: Math.min(a.x0, b.x0), x1: Math.max(a.x1, b.x1), y0: Math.min(a.y0, b.y0), y1: Math.max(a.y1, b.y1) }))];
+    }
+    const midY = mid - y0;
+    if (whole.length === 1 && whole[0].y0 < midY - s * 0.5 && whole[0].y1 > midY + s * 0.5) {
+      const read = charOf(part, whole[0], 'C0');
+      if (read && read.char === 'C') return lineCols.length ? { time: [2, 2], symbol: 'cut' } : { time: [4, 4], symbol: 'common' };
+    }
+    return null;
   }
 
   // The staff whose middle is nearest a height.
@@ -623,6 +864,7 @@
   // Lengths for every measure read above: notes from their heads, stems, beams, flags and dots; rests from the pieces
   // left over; ties and tuplet numbers marked as not read (PRD #4-L-4).
   function readLengths(clean, pieces, analysis) {
+    analysis.keys = analysis.staves.map(() => ({ fifths: 0, sure: true }));
     const curves = analysis.staves.length ? thinCurves(clean, analysis.staves[0].space) : [];
     analysis.staves.forEach((staff, i) => {
       const s = staff.space;
@@ -643,11 +885,19 @@
           return { x: head.x, note: { type, dots: Math.min(dots, 1), pitch: pitchOf(head.pos, clef) } };
         });
         const firstHead = m.heads.length ? m.heads[0].x : m.x1;
-        // The key signature: accidental-shaped pieces one after another right after the clef (read in 69단계).
+        const accidentals = new Map(); // head → 'sharp' | 'flat' | 'natural'
+        // The key signature: accidental-shaped pieces one after another right after the clef.
         const header = new Set();
         if (k === 0) {
-          let edge = staff.left + s * (CLEF_SPACES + 1.2);
-          const candidates = pieces
+          let edge = staff.left + s * (CLEF_SPACES + 2.0);
+          // A sharp blurred into the clef on a photo: the part past the clef's end is looked at on its own.
+          const clefEnd = staff.left + s * 2.95;
+          // (It may have run into the time signature too: the part is cut into characters at blank columns.)
+          const cut = (p) => {
+            if (!(p.x0 < clefEnd && p.x1 > clefEnd + s * 0.3)) return [p];
+            return charsIn(clean, Math.ceil(clefEnd), p.y0, p.x1, p.y1, s).map((c) => ({ ...c, count: 1, fromClef: true }));
+          };
+          const candidates = pieces.flatMap(cut)
             .filter((p) => p.x0 >= staff.left + s * 2.4 && (p.x0 + p.x1) / 2 < firstHead - s * 0.8
               && p.y1 > staff.top - s * 1.5 && p.y0 < staff.bottom + s * 1.5)
             .sort((a, b) => a.x0 - b.x0);
@@ -655,9 +905,34 @@
             const w = (p.x1 - p.x0 + 1) / s;
             const h = (p.y1 - p.y0 + 1) / s;
             if (stacked(clean, staff, (p.x0 + p.x1) / 2)) continue;
-            if (p.x0 > edge || h < 0.8 || h > 3.2 || w < 0.3 || w > 1.1) break;
+            const shaped = h >= 0.8 && h <= 3.2 && w >= 0.3 && w <= 1.1;
+            if (p.fromClef && !shaped) continue; // what is left of the clef
+            if (p.x0 > edge || !shaped) break;
             header.add(p);
             edge = p.x1 + s * 0.9;
+          }
+          analysis.keys[i] = keyOf(clean, header);
+          if (!analysis.keys[i].sure) m.doubtful = true;
+        }
+        const key = analysis.keys[i];
+        // A time signature at the start (after the key) or where the time changes (just after the barline).
+        {
+          // (The clef itself is about 2.9 spaces wide: a wide time signature may start inside CLEF_SPACES.)
+          const from = k === 0 ? (header.size ? Math.max(...[...header].map((p) => p.x1)) : staff.left + s * 2.95) : m.x0 + Math.max(2, s * 0.1);
+          const until = Math.min(m.x1, from + s * 2.4, firstHead - s * 0.3);
+          let x0 = null;
+          for (let x = Math.round(from); x <= until; x++) {
+            if (stacked(clean, staff, x)) {
+              x0 = x;
+              break;
+            }
+          }
+          if (x0 !== null) {
+            const zone = [Math.max(from, x0 - s * 1.2), Math.min(firstHead - s * 0.6, x0 + s * 1.8)];
+            const found = timeAt(clean, pieces, staff, zone[0], zone[1]);
+            if (found) m.time = found;
+            else m.timeUnread = true;
+            m.timeZone = zone;
           }
         }
         // No heads inside the key signature.
@@ -691,11 +966,16 @@
           if (digitPair(p, pieces, staff) || (oneHalf && w >= s * 0.9 && stacked(clean, staff, cx))) continue;
           if (k === 0 && cx < firstHead && stacked(clean, staff, cx)) continue; // part of the time signature
           // An accidental: right up against a head's left side, at its height.
-          const nearHead = m.heads.some((head) => {
+          const owner = m.heads.find((head) => {
             const left = head.x - run(clean, head.x, head.y, -1, 0, s) + 1;
             return p.x1 < head.x && p.x1 >= left - s * 0.15 && p.y0 < head.y && p.y1 > head.y;
           });
-          if (nearHead) continue;
+          if (owner) {
+            const sign = accidentalOf(clean, p);
+            if (sign) accidentals.set(owner, sign);
+            else m.doubtful = true;
+            continue;
+          }
           const rest = restOf(clean, p, staff);
           if (rest) {
             items.push({ x: cx, note: { type: rest.type, dots: 0, rest: true } });
@@ -703,26 +983,42 @@
           }
           // A little number above or below the staff (a tuplet): not read yet.
           const outside = p.y1 < staff.top - s * 0.2 || p.y0 > staff.bottom + s * 0.2;
-          if (outside && h >= s * 0.4 && h <= s * 1.1 && w <= s * 0.9 && !(k === 0 && cx < m.from + s * 1.5)) m.unsupported = true;
+          const inTime = m.timeZone && p.x1 >= m.timeZone[0] && p.x0 <= m.timeZone[1];
+          if (outside && h >= s * 0.4 && h <= s * 1.1 && w <= s * 0.9 && !inTime && !(k === 0 && cx < m.from + s * 1.5)) m.unsupported = true;
         }
         // A thin curve (a tie or a slur, or a tuplet's bracket) over the measure — one going over a barline counts for
         // both sides.
         for (const c of curves) {
           // (A barline cuts a tie in two: one ending at this measure's start counts too.)
-          if (c.x1 < m.x0 - s * 0.5 || c.x0 > m.x1) continue;
+          if (c.x1 < m.x0 - s * 1.5 || c.x0 > m.x1) continue;
           if (nearestStaff(analysis.staves, (c.y0 + c.y1) / 2) !== staff) continue;
           if (c.y1 < staff.top - s * 4 || c.y0 > staff.bottom + s * 4) continue;
+          if (m.timeZone && c.x1 >= m.timeZone[0] && c.x0 <= m.timeZone[1]) continue; // a stroke of the time signature
           // The thin top or bottom of a hollow head's ring is no tie.
           const cy = (c.y0 + c.y1) / 2;
-          if (heads.some((head) => head.x >= c.x0 && head.x <= c.x1 && Math.abs(head.y - cy) < s * 0.6)) continue;
+          // (A tie touching a whole note's ring makes one wider piece with it: that stays a tie.)
+          if (c.x1 - c.x0 + 1 <= s * 1.3 && heads.some((head) => head.x >= c.x0 && head.x <= c.x1 && Math.abs(head.y - cy) < s * 0.6)) continue;
           m.unsupported = true;
         }
         items.sort((a, b) => a.x - b.x);
+        // Accidentals: the one just left of a head, carried to the end of the measure for that line or space; else
+        // the key signature.
+        const carried = new Map();
+        const keyAlters = Sheet.keyAlters({ fifths: key.fifths, mode: 'major' });
+        for (const item of items) {
+          if (item.note.rest) continue;
+          const head = m.heads.find((h) => h.x === item.x);
+          const pitch = item.note.pitch;
+          const place = `${pitch.step}${pitch.octave}`;
+          const sign = head && accidentals.get(head);
+          if (sign) carried.set(place, ALTERS[sign]);
+          pitch.alter = carried.has(place) ? carried.get(place) : keyAlters[pitch.step] ?? 0;
+        }
         m.notes = items.map((item) => item.note);
         if (m.unsupported) m.doubtful = true;
       });
     });
   }
 
-  window.OmrSymbols = { POS_MIN, POS_MAX, CLEF_SPACES, removeLines, findHeads, findClef, pitchOf, posY, read, integral, components, restOf, digitPair, thinCurves };
+  window.OmrSymbols = { accidentalOf, keyOf, charOf, timeAt, charsIn, stacked, POS_MIN, POS_MAX, CLEF_SPACES, removeLines, findHeads, findClef, pitchOf, posY, read, integral, components, restOf, digitPair, thinCurves };
 })();

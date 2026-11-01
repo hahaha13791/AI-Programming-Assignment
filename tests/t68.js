@@ -94,12 +94,18 @@
   });
 
   T.test('68-2 붙임줄·셋잇단이 든 마디는 확인 필요와 알림', async (T) => {
-    const { sheet, score } = (await allSheets())[4]; // 리듬 표기 연습곡: 붙임줄(1·3·4·6·7마디 등), 셋잇단(2·4마디)
-    const page = pageOf(sheet.canvas);
-    const built = OmrBuild.score([OmrSymbols.read(page, OmrStaff.analyse(page))], { title: '연습곡' });
+    // 붙임줄(마디 안·마디 넘어)과 셋잇단이 있는 곡. (예시 '리듬 표기 연습곡'의 첫 붙임줄은 앱이 음을 바짝 붙여 그려 5px뿐이라
+    // 인쇄 악보와 달라서, 보통 간격으로 그린 곡으로 본다.)
+    const score = Notation.build({
+      id: 't68-ties', title: '붙임줄 시험', time: [4, 4], key: { fifths: 0, mode: 'major' }, clef: 'treble', tempo: 100,
+      music: 'C5:h~ C5:q D5:q | E5:q 3[ F5:8 G5:8 A5:8 ] B4:h | C5:w~ | C5:h G4:h | A4:q B4:q C5:h',
+    });
+    const page = pageOf((await OmrTest.sheetCanvas(score)).canvas);
+    const built = OmrBuild.score([OmrSymbols.read(page, OmrStaff.analyse(page))], { title: '붙임줄' });
     const marked = new Set(built.checks);
     const want = score.measures.map((m, i) => (m.notes.some((n) => n.tie || n.tuplet) ? i : -1)).filter((i) => i >= 0);
     T.check(want.every((i) => marked.has(i)), `붙임줄·셋잇단 마디 ${want.map((i) => i + 1)} 모두 확인 필요 (표시 ${built.checks.map((m) => m + 1)})`);
+    T.check(!marked.has(4), '붙임줄·셋잇단이 없는 마지막 마디는 그대로');
     T.check(built.notices.some((n) => n.includes('붙임줄·잇단음표·화음 등은 아직 읽지 못해요')), `알림: ${built.notices.join(' / ')}`);
     // 그런 것이 없는 곡은 알림 없음.
     const twinkle = (await allSheets())[0].sheet;
