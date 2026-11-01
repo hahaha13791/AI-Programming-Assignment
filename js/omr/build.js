@@ -15,6 +15,7 @@
     unsupported: '붙임줄·잇단음표·화음 등은 아직 읽지 못해요. 편집기에서 넣어 주세요',
     major: '장조·단조는 사진으로 알 수 없어 장조로 두었어요',
     noTime: '박자표를 찾지 못해 4/4로 두었어요',
+    guessedTime: '읽지 못한 박자표는 마디에 든 음의 길이로 짐작했어요',
   };
 
   const pause = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -89,6 +90,39 @@
   function score(analyses, { staffChoice = 0, title = '' } = {}) {
     const measures = collect(analyses, staffChoice);
     if (!measures.length) throw new OmrError(MESSAGES.noStaff);
+    // A time signature further on that was there but couldn't be read: the time most of that staff's measures hold,
+    // if they agree (else the time so far). (None at the start: 4/4 with a notice, PRD #4-L-3.)
+    let guessed = false;
+    const staffTime = (from, least = 2) => {
+      const sums = [];
+      for (let i = from + 1; i < measures.length && !measures[i].staffStart; i++) {
+        if (i === measures.length - 1 || !measures[i].notes?.length) continue;
+        const quarters = measures[i].notes.reduce((sum, n) => sum + N.toNumber(N.duration(n)) * 4, 0);
+        sums.push(Math.round(quarters * 8) / 8);
+      }
+      const counts = new Map();
+      for (const q of sums) counts.set(q, (counts.get(q) ?? 0) + 1);
+      const [best, count] = [...counts].sort((a, b) => b[1] - a[1])[0] ?? [];
+      if (!best || count < Math.max(least, sums.length * (least > 2 ? 0.6 : 0.5)) || ![2, 3, 4].includes(best)) return null;
+      guessed = true;
+      return { time: [best, 4] };
+    };
+    for (let i = 0; i < measures.length; i++) {
+      const m = measures[i];
+      // A staff (not the first) with no time signature read anywhere in it whose measures all agree on another time
+      // than so far: a time signature there that wasn't seen (a new movement, say).
+      let end = i + 1;
+      while (end < measures.length && !measures[end].staffStart) end++;
+      const unseen = i > 0 && m.staffStart && !m.time && !measures.slice(i, end).some((x) => x.time || x.timeUnread);
+      if (i > 0 && m.staffStart && (m.timeUnread || unseen)) {
+        const time = staffTime(i, 2);
+        const current = measures.slice(0, i).reverse().find((x) => x.time)?.time?.time ?? DEFAULT_TIME;
+        if (time && (m.timeUnread || `${time.time}` !== `${current}`)) {
+          m.time = time;
+          m.timeGuessed = true;
+        }
+      }
+    }
     const firstTime = measures[0].time;
     let time = firstTime?.time ?? DEFAULT_TIME;
     let key = measures[0].key ?? 0;
@@ -109,7 +143,7 @@
       const length = N.measureLength(time);
       const read = m.notes ?? Editing.restsFor(length);
       const { notes, changed } = fit(read, length, { first: i === 0, last: i === measures.length - 1 });
-      if (changed || m.doubtful || (m.timeUnread && i > 0)) checks.push(i);
+      if (changed || m.doubtful || m.timeGuessed || (m.timeUnread && i > 0)) checks.push(i);
       measure.notes = notes;
       if (m.end === 'double' || m.end === 'final') measure.barline = m.end;
       // A staff starting with another clef changes it from that measure on.
@@ -139,6 +173,8 @@
     if (!firstTime) {
       notices.push(MESSAGES.noTime);
       if (!checks.includes(0)) checks.unshift(0);
+    } else if (guessed) {
+      notices.push(MESSAGES.guessedTime);
     }
     if (measures.some((m) => m.unsupported)) notices.push(MESSAGES.unsupported);
     return { score: N.clean(result), checks, notices, origins };

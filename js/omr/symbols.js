@@ -122,7 +122,7 @@
           const extend = (dir) => {
             let far = 0;
             let gap = 0;
-            for (let d = 1; d < s * 6; d++) {
+            for (let d = 1; d < s * 9; d++) { // (a beam over far-apart notes makes a long stem)
               const yy = Math.round(y + dy + dir * d);
               if (ink(page, sx, yy)) {
                 far = d;
@@ -324,8 +324,9 @@
     // A treble clef hangs well below the staff; a bass clef stays on it, mostly in its upper half.
     const measured = { above, below, upper: mass ? upper / mass : 0 };
     const top = measured.upper;
-    if (below >= 0.6) return { clef: 'treble', sure: below >= 0.9 && top < 0.55, ...measured };
-    if (above < 1.3 && top >= 0.55) return { clef: 'bass', sure: below < 0.4, ...measured };
+    if (below >= 0.6) return { clef: 'treble', sure: below >= 0.9 && top < 0.51, ...measured };
+    // (On a photo a treble clef's tail may come apart from it: its ink on the staff still sits lower, under 0.48 up.)
+    if (above < 1.3 && top >= 0.51) return { clef: 'bass', sure: below < 0.4, ...measured };
     return { clef: 'treble', sure: false, ...measured };
   }
 
@@ -987,7 +988,8 @@
             const mid = OmrStaff.lineY(staff, 2, (p.x0 + p.x1) / 2);
             const acrossMiddle = p.y0 < mid - s * 0.6 && p.y1 > mid + s * 0.6;
             if (digitPair(p, pieces, staff) || (acrossMiddle && !accidentalOf(clean, p) && charOf(clean, p).char === 'C')) break;
-            if (h < 0.5 && w < 0.5) continue; // a dot (the bass clef's)
+            // A dot (the bass clef's), or a scrap of one run into a sign on a photo: passed over.
+            if (h < 0.8 && w < 1) continue;
             const shaped = h >= 0.8 && h <= 3.5 && w >= 0.2 && w <= 1.3;
             if (p.fromClef && !shaped) continue; // what is left of the clef
             if (p.x0 > edge || !shaped) break;
@@ -1042,25 +1044,32 @@
           if (m.heads.some((head) => head.x >= p.x0 - 1 && head.x <= p.x1 + 1 && head.y >= p.y0 - 1 && head.y <= p.y1 + 1)) continue;
           const w = p.x1 - p.x0 + 1;
           const h = p.y1 - p.y0 + 1;
-          if (w <= s * 0.25) continue; // a barline or a stem on its own
+          if (w < s * 0.25) continue; // a barline or a stem on its own
           // A time signature's number: one of a pair, or a wide piece in one half with ink stacked on the other.
           const mid = (staff.top + staff.bottom) / 2;
           const oneHalf = p.y1 <= mid + s * 0.3 || p.y0 >= mid - s * 0.3;
-          if (digitPair(p, pieces, staff) || (oneHalf && w >= s * 0.9 && stacked(clean, staff, cx))) continue;
+          // (Only where a time signature can be: in its zone, or before the measure's first note — a beam under a
+          // sharp elsewhere looks stacked too.)
+          const timePlace = m.timeZone ? p.x1 >= m.timeZone[0] && p.x0 <= m.timeZone[1] : cx < firstHead;
+          if (digitPair(p, pieces, staff) || (oneHalf && w >= s * 0.9 && timePlace && stacked(clean, staff, cx))) continue;
           if (k === 0 && cx < firstHead && stacked(clean, staff, cx)) continue; // part of the time signature
           // A big sign across the middle line before a staff's first note: a time signature (C, ¢), not a rest.
           const middle = OmrStaff.lineY(staff, 2, cx);
           if (k === 0 && cx < firstHead && p.y0 < middle - s * 0.5 && p.y1 > middle + s * 0.5 && h >= s * 1.5) continue;
-          // An accidental: right up against a head's left side, at its height.
-          const owner = m.heads.find((head) => {
-            const left = head.x - run(clean, head.x, head.y, -1, 0, s) + 1;
-            return p.x1 < head.x && p.x1 >= left - s * 0.15 && p.y0 < head.y && p.y1 > head.y;
-          });
+          // An accidental: right up against a head's left side, at its height. (Engraved music leaves a little gap:
+          // a piece up to 0.6 spaces off counts when it is shaped like one.)
+          const gapTo = (head) => head.x - run(clean, head.x, head.y, -1, 0, s) + 1 - p.x1;
+          const owner = m.heads.find((head) => p.x1 < head.x && gapTo(head) <= s * 0.6 && p.y0 < head.y && p.y1 > head.y);
           if (owner) {
             const sign = accidentalOf(clean, p);
-            if (sign) accidentals.set(owner, sign);
-            else m.doubtful = true;
-            continue;
+            if (sign) {
+              accidentals.set(owner, sign);
+              continue;
+            }
+            if (gapTo(owner) <= s * 0.15) {
+              m.doubtful = true;
+              continue;
+            }
           }
           const rest = restOf(clean, p, staff);
           if (rest) {
