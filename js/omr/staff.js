@@ -275,16 +275,28 @@
       const reach = Math.max(2, space * 0.6);
       if (!joinedAbove && !clear(top - thick - reach, top - thick - 1)) return false;
       if (!joinedBelow && !clear(bottom + thick + 1, bottom + thick + reach)) return false;
-      // No note head on it: across each space the ink is no wider than the line.
-      for (let s = 0; s < 4; s++) {
-        const y = (lineY(staff, s, x) + lineY(staff, s + 1, x)) / 2;
-        let left = run.x0;
-        while (left > run.x0 - space && inkAt(page, left - 1, y)) left--;
-        let right = run.x1;
-        while (right < run.x1 + space && inkAt(page, right + 1, y)) right++;
-        if (right - left + 1 > w + space * 0.45) return false;
-      }
-      return true;
+      // No note head on it: a stem has its head at one end (in the end spaces or just past the staff), while
+      // something wide beside a barline all the way down (a time or key signature) leaves it a barline.
+      // How far ink reaches sideways from the line at height y, over gaps of a pixel or two.
+      const wideAt = (y) => {
+        const reachOut = (from, dir) => {
+          let at = from;
+          let gap = 0;
+          for (let x = from + dir; Math.abs(x - from) <= space; x += dir) {
+            if (inkAt(page, x, y)) {
+              at = x;
+              gap = 0;
+            } else if (++gap > 2) break;
+          }
+          return at;
+        };
+        return reachOut(run.x1, 1) - reachOut(run.x0, -1) + 1 > w + space * 0.45;
+      };
+      const spaces = [0, 1, 2, 3].map((k) => wideAt((lineY(staff, k, x) + lineY(staff, k + 1, x)) / 2));
+      const beyond = [top - space * 0.5, bottom + space * 0.5].some((y) => wideAt(y));
+      const count = spaces.filter(Boolean).length;
+      if (count >= 3) return true;
+      return count === 0 && !beyond;
     });
     // Two lines close together: a double barline, or thin + thick: the final barline. On a photo the two of a final
     // barline can blur into one: a single line much thicker than the usual one is taken as final too.

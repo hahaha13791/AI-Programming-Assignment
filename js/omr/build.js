@@ -12,6 +12,7 @@
 
   const MESSAGES = {
     noStaff: '오선을 찾지 못했어요. 종이 모서리를 고치거나, 더 밝고 반듯하게 찍어 주세요.',
+    unsupported: '붙임줄·잇단음표·화음 등은 아직 읽지 못해요. 편집기에서 넣어 주세요',
   };
 
   const pause = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -72,7 +73,7 @@
         analysis.measures[staffIndex].forEach((m, k) => {
           out.push({
             page, staff, staffIndex, x0: m.x0, x1: m.x1, end: m.end, notes: m.notes ?? null, doubtful: Boolean(m.doubtful),
-            clef, staffStart: k === 0,
+            unsupported: Boolean(m.unsupported), clef, staffStart: k === 0,
           });
         });
       }
@@ -117,6 +118,7 @@
       };
     });
     const notices = [`제목은 파일 이름으로, 빠르기는 ♩= ${TEMPO}로 두었어요`];
+    if (measures.some((m) => m.unsupported)) notices.push(MESSAGES.unsupported);
     return { score: N.clean(result), checks, notices, origins };
   }
 

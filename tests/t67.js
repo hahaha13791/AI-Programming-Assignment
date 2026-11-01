@@ -7,7 +7,7 @@
   const truth = (score) => score.measures.flatMap((m) => m.notes.filter((n) => !n.rest).map((n) => name(n.pitch)));
   const readAll = (page) => {
     const analysis = OmrSymbols.read(page, OmrStaff.analyse(page));
-    return { analysis, heads: analysis.measures.flat().flatMap((m) => m.notes.map((n) => name(n.pitch))) };
+    return { analysis, heads: analysis.measures.flat().flatMap((m) => m.notes.filter((n) => !n.rest).map((n) => name(n.pitch))) };
   };
   // Share of heads right: 1 − edit distance / number of heads.
   function accuracy(got, want) {
@@ -59,7 +59,7 @@
     let right = 0;
     let total = 0;
     for (const [k, { score, sheet }] of (await allSheets()).entries()) {
-      const photo = OmrTest.paperPhoto(sheet.canvas, { bend: 5, seed: 20 + k, noise: 8 });
+      const photo = OmrTest.paperPhoto(sheet.canvas, { bend: 5, seed: 20 + k, noise: 8, fit: true });
       const flat = OmrImage.flatten(photo, OmrImage.findCorners(photo) ?? photo.corners);
       const want = truth(score);
       const { heads } = readAll(flat);
@@ -88,7 +88,8 @@
     const chordSheet = await OmrTest.sheetCanvas(chordScore);
     const chord = readAll(pageOf(chordSheet.canvas)).analysis;
     const m3 = chord.measures[0][2];
-    T.check(m3.doubtful && name(m3.notes[0].pitch) === 'A4' && m3.notes.length === 4, `화음 마디: 확인 필요, 위 음 하나 (${m3.notes.map((n) => name(n.pitch))})`);
+    const m3n = m3.notes.filter((n) => !n.rest);
+    T.check(m3.doubtful && name(m3n[0].pitch) === 'A4' && m3n.length === 4, `화음 마디: 확인 필요, 위 음 하나 (${m3n.map((n) => name(n.pitch))})`);
     T.check(!chord.measures[0][0].doubtful && !chord.measures[0][1].doubtful, '다른 마디는 그대로');
     // 덩어리: 둘째 마디 아래에 검은 얼룩.
     const { canvas, rows } = (await allSheets())[0].sheet;
@@ -113,10 +114,8 @@
     T.check(await recognizePhotos(), '편집기로');
     const got = scoreEditor.state.score;
     T.check(got.measures[0].clef === 'bass', `음자리표: ${got.measures[0].clef}`);
-    // 길이는 68단계에서 읽으므로 지금은 마디마다 4분음표로 채운 앞 4음까지만 들어감: 그 음들이 정답의 앞 음과 같은가.
-    const got4 = got.measures.flatMap((m) => m.notes.filter((n) => !n.rest).map((n) => name(n.pitch)));
-    const want4 = score.measures.flatMap((m) => m.notes.filter((n) => !n.rest).slice(0, 4).map((n) => name(n.pitch)));
-    T.check(accuracy(got4, want4) >= 0.97, `음높이 (${got4.slice(0, 8).join(' ')} …)`);
+    const heads = got.measures.flatMap((m) => m.notes.filter((n) => !n.rest).map((n) => name(n.pitch)));
+    T.check(accuracy(heads, truth(score)) >= 0.97, `음높이 (${heads.slice(0, 8).join(' ')} …)`);
     T.$('editor-cancel').click();
     await T.listen();
     T.enterNotes(current);

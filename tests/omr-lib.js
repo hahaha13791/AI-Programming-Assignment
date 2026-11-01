@@ -20,6 +20,10 @@ window.OmrTest = (() => {
         const value = style.getPropertyValue(prop);
         if (value && value !== 'none' && !/rgba\([^)]*,\s*0\)/.test(value) && value !== 'transparent') target.style.setProperty(prop, '#000');
       }
+      // Printed staff lines, barlines and ledger lines are a little heavier than the screen's hairlines.
+      if (el.classList?.contains('sv-line') || el.classList?.contains('sv-bar') || el.classList?.contains('sv-ledger')) {
+        target.style.setProperty('stroke-width', String(Math.max(1.4, parseFloat(style.getPropertyValue('stroke-width')) || 0)));
+      }
       // Press areas and highlights are see-through on screen; leave them out of the picture.
       if (el.classList?.contains('sv-hit') || el.classList?.contains('sv-pick')) target.style.setProperty('visibility', 'hidden');
     });
@@ -96,10 +100,14 @@ window.OmrTest = (() => {
   // (나): the page placed with perspective at the corners on a darker, noisy background, with an optional shadow
   // (shadow: how dark the darkest side gets, 0–1) and noise (± brightness). → canvas
   // bend: the paper's middle sags by this many page pixels (a curled page; 0 = flat).
-  function paperPhoto(page, { width = 1600, height = 1200, corners, background = 92, shadow = 0, noise = 6, seed = 1, bend = 0 } = {}) {
-    const quad = corners ?? [
+  // fit: make the photo as big as the app reads one (long side OmrImage.MAX_SIDE), corners scaled with it.
+  function paperPhoto(page, { width = 1600, height = 1200, corners, background = 92, shadow = 0, noise = 6, seed = 1, bend = 0, fit = false } = {}) {
+    const k = fit ? OmrImage.MAX_SIDE / Math.max(width, height) : 1;
+    const quad = (corners ?? [
       { x: 330, y: 130 }, { x: 1280, y: 170 }, { x: 1330, y: 1110 }, { x: 260, y: 1080 },
-    ];
+    ]).map((c) => ({ x: c.x * k, y: c.y * k }));
+    width = Math.round(width * k);
+    height = Math.round(height * k);
     const pw = page.width;
     const ph = page.height;
     const src = page.getContext('2d').getImageData(0, 0, pw, ph).data;
