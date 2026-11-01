@@ -471,8 +471,10 @@
     };
   }
 
-  // Playback, ♩ = 80. Everything sounds at one pitch; clicks are short and higher.
-  const BEAT = 60 / 80;
+  // Playback. Everything sounds at one pitch; clicks are short and higher.
+  // A beat is a quarter in simple time and a dotted quarter in compound time (6/8, 9/8, 12/8).
+  const BEAT = 60 / 80; // 기본, and 심화 쉬움·중간 in simple time: ♩ = 80
+  const SLOW_BEAT = 60 / 60; // 심화: ♩. = 60 in compound time; 어려움 every beat (♩ = 60, ♩. = 60) (PRD #4-J-2)
   const TONE = 72; // C5
   const CLICK = 84; // C6
   const CLICK_HIGH = 96; // C7: the count-in's first beat (easy/medium)
@@ -482,36 +484,59 @@
   const ACCENT_PEAK = 0.45; // a measure's first beat
   const NOTE_SHARE = 0.9; // a note sounds for this share of its written length
 
+  const isCompound = (time) => time[1] === 8 && time[0] % 3 === 0 && time[0] >= 6;
+  const beatUnit = (time) => (isCompound(time) ? N.frac(3, 8) : QUARTER);
+  // Seconds per beat for a question: 기본 ♩ = 80; 심화 쉬움·중간 ♩ = 80 / ♩. = 60; 심화 어려움 one second for every
+  // time signature, so the count-in doesn't tell simple from compound.
+  function beatOf(time, { advanced = false, hard = false } = {}) {
+    if (!advanced) return BEAT;
+    if (hard) return SLOW_BEAT;
+    return isCompound(time) ? SLOW_BEAT : BEAT;
+  }
+
   // rhythm: { time: [beats, beatType], measures: [[note, ...], ...] }.
-  // fixedCountIn: true = one measure of count-in with a high first click (the time signature is given);
-  // false = four identical clicks that only set the tempo (hard, where the time signature is the question).
+  // fixedCountIn: true = one measure of count-in in beats with a high first click (the time signature is given;
+  // 6/8 counts 2, 9/8 3, 12/8 4); false = four identical clicks that only set the tempo (hard, where the time
+  // signature is the question). beat: seconds per beat (beatOf).
+  // Notes tied together sound once, for their whole length; triplets are exact thirds (the score format's lengths).
   // Returns { events (for Sound.playEvents), total (seconds, including trailing rests), start (when the rhythm begins) }.
-  function schedule(rhythm, { fixedCountIn = true } = {}) {
-    const beats = fixedCountIn ? rhythm.time[0] : 4;
+  function schedule(rhythm, { fixedCountIn = true, beat = BEAT } = {}) {
+    const compound = isCompound(rhythm.time);
+    const beats = fixedCountIn ? (compound ? rhythm.time[0] / 3 : rhythm.time[0]) : 4;
     const events = [];
     for (let i = 0; i < beats; i++) {
       const high = fixedCountIn && i === 0;
-      events.push({ kind: 'click', start: i * BEAT, length: CLICK_LENGTH, midi: high ? CLICK_HIGH : CLICK, peak: CLICK_PEAK });
+      events.push({ kind: 'click', start: i * beat, length: CLICK_LENGTH, midi: high ? CLICK_HIGH : CLICK, peak: CLICK_PEAK });
     }
-    const start = beats * BEAT;
+    const start = beats * beat;
+    const whole = beat / N.toNumber(beatUnit(rhythm.time)); // seconds per whole note
     let time = start;
+    let open = null; // the sounding note a tie carries on
+    const written = new Map();
     for (const measure of rhythm.measures) {
       measure.forEach((note, i) => {
-        const length = N.toNumber(N.duration(note)) / N.toNumber(QUARTER) * BEAT;
-        if (!note.rest) {
-          events.push({
-            kind: 'note', type: codeOf(note), start: time, length: length * NOTE_SHARE, midi: TONE,
-            peak: i === 0 ? ACCENT_PEAK : NOTE_PEAK, sustain: true,
-          });
+        const length = N.toNumber(N.duration(note)) * whole;
+        if (note.rest) {
+          open = null;
+        } else {
+          if (open && N.tieStops(note.tie)) {
+            written.set(open, written.get(open) + length);
+          } else {
+            open = { kind: 'note', type: codeOf(note), start: time, length: 0, midi: TONE, peak: i === 0 ? ACCENT_PEAK : NOTE_PEAK, sustain: true };
+            written.set(open, length);
+            events.push(open);
+          }
+          if (!N.tieStarts(note.tie)) open = null;
         }
         time += length;
       });
     }
+    for (const [event, length] of written) event.length = length * NOTE_SHARE;
     return { events, total: time, start };
   }
 
   window.Rhythm = {
-    create, draw, schedule, iconFor, beatsText, noteOf, codeOf, noteKey, timeText, sameTime,
+    create, draw, schedule, beatOf, isCompound, iconFor, beatsText, noteOf, codeOf, noteKey, timeText, sameTime,
     TYPES, LENGTHS, LEVEL_TYPES, LEVEL_TOGGLES, TIME_SIGNATURES, ADVANCED_TIME_SIGNATURES, lengthOf, splitMeasures,
   };
 })();

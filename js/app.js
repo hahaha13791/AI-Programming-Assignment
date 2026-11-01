@@ -837,7 +837,9 @@ function chordMidis() {
 // Rhythm: count-in, then the rhythm. Hard's count-in doesn't give the time signature away.
 // Returns the playback length in seconds.
 function playRhythm() {
-  const { events, total } = Rhythm.schedule(current, { fixedCountIn: level !== 'hard' });
+  const hard = level === 'hard';
+  const beat = Rhythm.beatOf(current.time, { advanced: rhythmKind === 'advanced', hard });
+  const { events, total } = Rhythm.schedule(current, { fixedCountIn: !hard, beat });
   return Sound.playEvents(events, total);
 }
 
