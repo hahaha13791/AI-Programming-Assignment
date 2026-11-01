@@ -1159,8 +1159,149 @@ button:focus-visible {
 /* Score editor (내 악보) */
 
 .app[data-editing] .practice,
-.app[data-viewing] .practice {
+.app[data-viewing] .practice,
+.app[data-photos] .practice {
   display: none;
+}
+
+/* 사진 불러오기 (PRD #4-L): thumbnails in order, the photo with its four corner handles, the flat preview. */
+.photos h2 {
+  margin: 0;
+}
+
+.photos-status {
+  min-height: 2.6em;
+  margin: var(--space-2) 0;
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
+.photos-status.is-error {
+  color: var(--missed);
+}
+
+.photos-thumbs {
+  display: flex;
+  gap: var(--space-2);
+  min-height: 64px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.photos-thumb {
+  position: relative;
+  flex: none;
+  padding: 2px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  line-height: 0;
+  cursor: pointer;
+}
+
+.photos-thumb[aria-selected="true"] {
+  border-color: var(--accent);
+}
+
+.photos-thumb canvas {
+  height: 56px;
+  width: auto;
+  border-radius: 4px;
+}
+
+.photos-thumb-number {
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  min-width: 1.4em;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.photos-order {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.photos-label {
+  margin: var(--space-3) 0 var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.photos-stage {
+  position: relative;
+  max-width: 100%;
+  margin: 0 auto;
+  touch-action: none;
+  user-select: none;
+}
+
+.photos-stage[hidden] {
+  display: none;
+}
+
+.photos-stage-image,
+.photos-outline {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.photos-outline polygon {
+  fill: rgba(61, 90, 128, 0.12);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.photos-handle {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  margin: -14px 0 0 -14px;
+  padding: 0;
+  border: 3px solid var(--accent);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  cursor: grab;
+  touch-action: none;
+}
+
+.photos-handle:focus-visible {
+  outline: 3px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+
+.photos-corner-note {
+  min-height: 1.4em;
+  margin: var(--space-1) 0 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.photos-preview {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+}
+
+.photos-preview[hidden] {
+  display: none;
+}
+
+.photos-pending {
+  margin: var(--space-2) 0 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
 }
 
 /* 보기 (내 악보, PRD #4-K): the whole score with solfège. */

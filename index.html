@@ -68,8 +68,10 @@
           <div class="new-score-choices">
             <button type="button" class="btn btn-small" id="btn-make-score">직접 만들기</button>
             <button type="button" class="btn btn-small" id="btn-import-file">파일 불러오기</button>
+            <button type="button" class="btn btn-small" id="btn-import-photo">사진 불러오기</button>
           </div>
           <input type="file" id="import-file" accept=".musicxml,.xml,.mxl" hidden>
+          <input type="file" id="photo-file" accept="image/*" multiple hidden>
           <div class="import" id="import" hidden>
             <p class="import-file" id="import-file-name"></p>
             <p class="import-status" id="import-status" role="status"></p>
@@ -134,6 +136,29 @@
       <p class="viewer-title" id="viewer-title"></p>
       <p class="viewer-note" id="viewer-note"></p>
       <div class="viewer-sheet" id="viewer-sheet"></div>
+    </section>
+
+    <!-- 사진 불러오기 (PRD #4-L): the photos of one piece, their paper corners and flat black-and-white previews. -->
+    <section class="panel photos" id="photos" aria-labelledby="photos-heading" hidden>
+      <h2 id="photos-heading">사진 불러오기</h2>
+      <p class="photos-status" id="photos-status" role="status" aria-live="polite"></p>
+      <div class="photos-thumbs" id="photos-thumbs" role="listbox" aria-label="사진 순서"></div>
+      <div class="photos-order">
+        <button type="button" class="btn btn-small" id="photos-left" aria-label="앞으로">◀</button>
+        <button type="button" class="btn btn-small" id="photos-right" aria-label="뒤로">▶</button>
+        <button type="button" class="btn btn-small" id="photos-remove">빼기</button>
+        <button type="button" class="btn btn-small" id="photos-add">사진 더 넣기</button>
+      </div>
+      <p class="photos-label">종이 모서리</p>
+      <div class="photos-stage" id="photos-stage" hidden></div>
+      <p class="photos-corner-note" id="photos-corner-note" aria-live="polite"></p>
+      <p class="photos-label">펴서 흑백으로</p>
+      <canvas class="photos-preview" id="photos-preview" hidden></canvas>
+      <p class="photos-pending" id="photos-pending">인식은 다음 단계(66단계)에서 열려요.</p>
+      <div class="staff-controls photos-actions">
+        <button type="button" class="btn" id="photos-cancel">취소</button>
+        <button type="button" class="btn btn-primary" id="photos-recognize" disabled>인식</button>
+      </div>
     </section>
 
     <!-- 내 악보 editor (PRD #4-H): takes the place of the listening, writing and result panels while open. -->
@@ -234,6 +259,8 @@
   <script src="js/musicxml.js"></script>
   <script src="js/editing.js"></script>
   <script src="js/score-editor.js"></script>
+  <script src="js/omr/image.js"></script>
+  <script src="js/omr/photo-import.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

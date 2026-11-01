@@ -70,6 +70,7 @@ function setMode(next) {
   // Leaving 내 악보 while editing works like 취소: the unsaved changes are dropped. The 보기 screen closes too.
   if (editingId !== undefined) closeEditor();
   closeViewer();
+  closePhotos();
   mode = next;
   const info = MODES[mode];
   for (const tab of document.querySelectorAll('.mode-tab')) {
@@ -206,6 +207,7 @@ const scoreEditor = ScoreEditor.create({
 });
 
 function openEditor(id) {
+  closePhotos();
   Sound.stop();
   clearTimeout(unlockTimer);
   editingId = id;
@@ -233,6 +235,7 @@ const hasNotes = (score) => Boolean(score?.measures.some((m) => m.notes.some((n)
 function openViewer(id) {
   const score = scores.get(id);
   if (!hasNotes(score)) return;
+  closePhotos();
   Sound.stop();
   clearTimeout(unlockTimer);
   closeNewScore();
@@ -264,6 +267,7 @@ function renderViewer() {
 // Back to practice on the chosen score, with whatever the store has to say (a failed write).
 function backToPractice() {
   closeEditor();
+  closePhotos();
   renderScoreNotice();
   renderScorePicker();
   newQuestion();
@@ -411,6 +415,51 @@ $('import-file').addEventListener('change', (event) => {
   if (file) importFile(file);
 });
 $('import-parts').addEventListener('change', renderImportLines);
+
+// 사진 불러오기 (PRD #4-L-1, #4-L-2): the photo screen takes the place of practice like the editor. Leaving it (취소,
+// another mode, the editor or 보기) drops the photos; they are never stored.
+const photoImport = PhotoImport.create({
+  status: $('photos-status'),
+  thumbs: $('photos-thumbs'),
+  left: $('photos-left'),
+  right: $('photos-right'),
+  remove: $('photos-remove'),
+  stage: $('photos-stage'),
+  preview: $('photos-preview'),
+  cornerNote: $('photos-corner-note'),
+});
+const photosOpen = () => !$('photos').hidden;
+
+// Opens the photo screen with these files (or adds them when it is open). Resolves when they have been read.
+function importPhotos(files) {
+  if (!photosOpen()) {
+    closeNewScore();
+    closeViewer();
+    if (editingId !== undefined) closeEditor();
+    Sound.stop();
+    clearTimeout(unlockTimer);
+    photoImport.clear();
+    $('photos').hidden = false;
+    $('app').dataset.photos = '';
+  }
+  return photoImport.add(files);
+}
+
+function closePhotos() {
+  if (!photosOpen()) return;
+  photoImport.clear();
+  $('photos').hidden = true;
+  delete $('app').dataset.photos;
+}
+
+$('btn-import-photo').addEventListener('click', () => $('photo-file').click());
+$('photos-add').addEventListener('click', () => $('photo-file').click());
+$('photo-file').addEventListener('change', (event) => {
+  const files = [...event.target.files];
+  event.target.value = '';
+  if (files.length) importPhotos(files);
+});
+$('photos-cancel').addEventListener('click', closePhotos);
 $('btn-import').addEventListener('click', importChosen);
 // Every score opens in the editor (expansion 7); deleting is the editor's [삭제].
 function updateEditButton() {
