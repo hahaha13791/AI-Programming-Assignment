@@ -22,6 +22,10 @@
   const RHYTHM_UP = 10; // stems (7), a second beam, a tuplet number above
   const RHYTHM_DOWN = 3; // the time signature's lower number, ties below the heads
   const RHYTHM_PAD_TOP = 2;
+  // Solfège under the notes (PRD #4-K-2): one line per pitch of the biggest chord in the row, below the staff.
+  const SOLFEGE_LINE = 15;
+  const SOLFEGE_GAP = 6;
+  const SOLFEGE_CHAR = { syllable: 14, sign: 8, pad: 6 };
   const SMALL_CLEF = CLEF_WIDTH * 0.7;
   const MEASURE_PAD_LEFT = 8;
   const MEASURE_PAD_RIGHT = 6;
@@ -355,6 +359,37 @@
       }
       open = open.filter((i) => !clamped.includes(i));
       if (!open.length) return sizes;
+    }
+  }
+
+  // The solfège of each sounding head of a note, top to bottom: none for a rest or a head tied from the one before.
+  function solfegeOf(item, key, style) {
+    if (item.note.rest) return [];
+    return [...item.heads].sort((a, b) => b.pos - a.pos).filter((h) => !N.tieStops(h.tie))
+      .map((h) => ({ head: h.index, text: ScoreInput.label(h.pitch, key, style) }));
+  }
+  const solfegeWidth = (text) => [...text].reduce((w, c) => w + (/[가-힣]/.test(c) ? SOLFEGE_CHAR.syllable : SOLFEGE_CHAR.sign), 0) + SOLFEGE_CHAR.pad;
+
+  // With solfège on, each note is at least as wide as its syllables, so they don't run into each other.
+  function widenForSolfege(infos, style) {
+    for (const info of infos) {
+      let grown = 0;
+      const widths = info.notes.map((item) => {
+        item.solfege = solfegeOf(item, info.key, style);
+        const scale = item.grace ? GRACE_SCALE : 1;
+        return Math.max(0, ...item.solfege.map((l) => solfegeWidth(l.text) * scale));
+      });
+      // Syllables are centred on their heads, so the space after a note takes half of each neighbour's width; a head
+      // sits after its accidentals, so the next note's accidentals push its head (and syllable) further on.
+      info.notes.forEach((item, i) => {
+        const next = info.notes[i + 1];
+        const need = next ? (widths[i] + widths[i + 1]) / 2 + item.parts.left - next.parts.left : widths[i];
+        if (need > item.min) {
+          grown += need - item.min;
+          item.min = need;
+        }
+      });
+      info.min += grown;
     }
   }
 
@@ -817,7 +852,11 @@
     const { up, down, noteUp } = rowExtent(row);
     const rhythm = Boolean(row[0]?.rhythm);
     const padTop = rhythm ? RHYTHM_PAD_TOP : ROW_PAD_TOP;
-    const height = padTop + (up - down) * HALF + ROW_PAD_BOTTOM;
+    // Solfège: a band under the staff, as many lines as the row's biggest chord.
+    const solfegeLines = options.solfege ? Math.max(1, ...row.flatMap((info) => info.notes.map((n) => n.solfege?.length ?? 0))) : 0;
+    const band = solfegeLines ? SOLFEGE_GAP + solfegeLines * SOLFEGE_LINE : 0;
+    const staffBottom = padTop + (up - down) * HALF;
+    const height = staffBottom + band + ROW_PAD_BOTTOM;
     const yOf = (pos) => padTop + (up - pos) * HALF;
     const svg = svgEl('svg', { class: 'sheet-svg', viewBox: `0 0 ${width} ${height}`, 'data-row': r });
     const first = row[0];
@@ -884,6 +923,18 @@
         const result = drawNote(group, item, info.measureRest ? middle : nx + item.parts.left + item.parts.head / 2, yOf, rhythm);
         const noteGroup = group.lastElementChild;
         noteGroup.dataset.index = i;
+        if (options.solfege) {
+          // Syllables under the note, centred on its head; a mark (true / false) from options.solfegeMarks colours them.
+          const mark = options.solfegeMarks?.(info.index, i);
+          (item.solfege ?? []).forEach((l, k) => {
+            const text = svgEl('text', {
+              x: result.x, y: staffBottom + SOLFEGE_GAP + (k + 1) * SOLFEGE_LINE - 3,
+              class: `sv-solfege${item.grace ? ' is-grace' : ''}${mark === true ? ' is-correct' : mark === false ? ' is-wrong' : ''}`,
+              'data-measure': info.index, 'data-index': i, 'data-head': l.head,
+            }, l.text);
+            group.append(text);
+          });
+        }
         if (info.measureRest) noteGroup.dataset.measureRest = '';
         const cursor = options.cursor;
         if (cursor && cursor.measure === info.index && cursor.note === i) {
@@ -948,13 +999,15 @@
   // A score in one row that scrolls sideways (the box does), every measure numbered. For choosing measures
   // (options.hit: a press area over each, the selected ones highlighted, a pending start marked) and for the
   // answer section. Sized by a fixed height (px) or a scale (px per unit). Returns the SVG.
-  // options: { height | scale, hit, selected: { start, end }, pending (index), label }
+  // options: { height | scale, hit, selected: { start, end }, pending (index), label, solfege, solfegeMarks }
   function strip(container, score, options = {}) {
     const measures = N.resolve(score);
     const infos = measures.map((measure, i) => measureInfo(measure, i, i ? measures[i - 1] : null));
+    if (options.solfege) widenForSolfege(infos, options.solfege);
     const natural = STAFF_LEFT + RIGHT_PAD + infos.reduce((sum, info, k) => sum + info.min * 1.25 + prefixWidth(info, k === 0), 0);
     const { svg, width, height } = drawRow(infos, 0, natural, true, 0, {
       numberFirst: true, numberAll: true, hit: options.hit ?? true, selected: options.selected, pending: options.pending,
+      solfege: options.solfege, solfegeMarks: options.solfegeMarks,
     });
     const scale = options.scale ?? (options.height ?? 80) / height;
     svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
@@ -972,7 +1025,9 @@
   }
 
   // score: a v2 score. options: { label, numberFirst (show the number on the first row too), pick (the editor: press
-  // areas over the notes, every rest as written), cursor: { measure, note, head } (the editor's chosen note) }.
+  // areas over the notes, every rest as written), cursor: { measure, note, head } (the editor's chosen note),
+  // solfege: 'movable' | 'fixed' (syllables under the notes, PRD #4-K), solfegeMarks: (measure, note) => true / false
+  // / undefined (colours a note's syllables) }.
   // Redrawn when the box crosses the wide/narrow width.
   function draw(container, score, options = {}) {
     container.__sheet = { score, options };
@@ -994,6 +1049,7 @@
     const width = wide ? WIDTH.wide : WIDTH.narrow;
     const measures = N.resolve(score);
     const infos = measures.map((measure, i) => measureInfo(measure, i, i ? measures[i - 1] : null, Boolean(options.pick)));
+    if (options.solfege) widenForSolfege(infos, options.solfege);
     const rows = layoutRows(infos, width, wide ? 4 : 2);
     const sheet = document.createElement('div');
     sheet.className = 'sheet';

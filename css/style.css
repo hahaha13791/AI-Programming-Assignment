@@ -737,6 +737,27 @@ button:focus-visible {
   font-size: 20px;
 }
 
+/* Solfège under the notes (sheet.js, PRD #4-K): the 보기 screen and the answer section. */
+.sv-solfege {
+  font-size: 13px;
+  font-weight: 600;
+  text-anchor: middle;
+  fill: var(--text);
+}
+
+.sv-solfege.is-grace {
+  font-size: 9px;
+  font-weight: 500;
+}
+
+.sv-solfege.is-correct {
+  fill: var(--correct);
+}
+
+.sv-solfege.is-wrong {
+  fill: var(--wrong);
+}
+
 /* Score view (내 악보): pitch and rhythm on a five-line staff. Notes use currentColor so a measure's mark
    colours it; staff lines and barlines stay in the text colour. */
 .sv-line,
