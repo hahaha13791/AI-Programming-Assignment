@@ -44,6 +44,7 @@ window.RHYTHMS = {
 for (const level of Object.keys(RHYTHMS)) {
   RHYTHMS[level] = RHYTHMS[level].map(([time, text]) => ({
     time: time.split('/').map(Number),
-    measures: text.split('|').map((measure) => measure.trim().split(/\s+/)),
+    // Each code is a note of the score format (v2), all at one pitch.
+    measures: text.split('|').map((measure) => measure.trim().split(/\s+/).map(Rhythm.noteOf)),
   }));
 }

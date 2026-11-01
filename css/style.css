@@ -689,30 +689,12 @@ button:focus-visible {
   cursor: pointer;
 }
 
-/* Rhythm staff: a one-line staff with stems up. Notes use currentColor so a measure's mark colours it. */
+/* Rhythm staff (sheet.js rhythm()): a one-line staff with stems up, scaling with its box. Button icons use rh-*. */
 .rhythm-staff {
   display: block;
   width: 100%;
   height: auto;
   color: var(--text);
-}
-
-.rhythm-line,
-.rhythm-bar {
-  stroke: var(--text);
-  stroke-width: 1.2;
-}
-
-.rhythm-current {
-  fill: var(--accent-soft);
-}
-
-.rhythm-time {
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 20px;
-  font-weight: 700;
-  text-anchor: middle;
-  fill: var(--text);
 }
 
 .rh-fill {
@@ -742,12 +724,17 @@ button:focus-visible {
   stroke-linejoin: round;
 }
 
-.measure.is-correct {
+/* The rhythm staff (sheet.js rhythm()): a measure's mark colours its notes. */
+.sv-measure.is-correct {
   color: var(--correct);
 }
 
-.measure.is-wrong {
+.sv-measure.is-wrong {
   color: var(--wrong);
+}
+
+.sv-time.sv-time-rhythm {
+  font-size: 20px;
 }
 
 /* Score view (내 악보): pitch and rhythm on a five-line staff. Notes use currentColor so a measure's mark

@@ -17,6 +17,11 @@
   const CLEF_WIDTH = 46;
   const KEY_STEP = 10; // one sharp/flat of a key signature
   const TIME_WIDTH = 24;
+  const RHYTHM_LEFT = 6; // the rhythm staff's line starts a little in from the left
+  // The rhythm staff's rows are all the same height (steps above and below the line) so its box never jumps.
+  const RHYTHM_UP = 10; // stems (7), a second beam, a tuplet number above
+  const RHYTHM_DOWN = 3; // the time signature's lower number, ties below the heads
+  const RHYTHM_PAD_TOP = 2;
   const SMALL_CLEF = CLEF_WIDTH * 0.7;
   const MEASURE_PAD_LEFT = 8;
   const MEASURE_PAD_RIGHT = 6;
@@ -220,11 +225,14 @@
 
   // Everything needed to space and draw one measure.
   // exact: every rest as written (the editor, where each can be chosen), no measure rest.
-  function measureInfo(measure, index, prev, exact = false) {
+  // rhythm: the one-line rhythm staff (every note on the line, stems up, no clef or key, rests as written).
+  function measureInfo(measure, index, prev, exact = false, rhythm = false) {
     const length = N.filled(measure.notes); // what it holds, for its share of the row
-    const measureRest = !exact && isMeasureRest(measure, length);
+    const measureRest = !exact && !rhythm && isMeasureRest(measure, length);
     if (measureRest) measure = { ...measure, notes: [{ type: 'whole', dots: 0, rest: true }] };
-    const changes = {
+    const changes = rhythm ? {
+      clef: false, key: false, time: !measure.hideTime && (!prev || prev.time[0] !== measure.time[0] || prev.time[1] !== measure.time[1]),
+    } : {
       clef: !prev || prev.endClef !== measure.clef,
       key: !prev || prev.key.fifths !== measure.key.fifths || prev.key.mode !== measure.key.mode,
       time: !prev || prev.time[0] !== measure.time[0] || prev.time[1] !== measure.time[1] || prev.timeSymbol !== measure.timeSymbol,
@@ -237,7 +245,7 @@
       if (clefChange) clef = clefChange;
       if (note.rest) return { note, pos: null, top: null, bottom: null, heads: [], stem: 0, stemEnd: null, beam: null, accidental: null, clefChange };
       const heads = N.pitchesOf(note).map(({ pitch, tie }, h) => ({
-        pitch, tie, pos: position(pitch, clef), accidental: accidentals[i][h], written: h === 0, index: h,
+        pitch, tie, pos: rhythm ? MIDDLE : position(pitch, clef), accidental: rhythm ? null : accidentals[i][h], written: h === 0, index: h,
       })).sort((a, b) => a.pos - b.pos);
       const top = heads[heads.length - 1].pos;
       const bottom = heads[0].pos;
@@ -249,7 +257,7 @@
           beam: null, accidental: written.accidental, clefChange, grace: true,
         };
       }
-      const stem = stemOf(note, top, bottom);
+      const stem = rhythm ? (note.type === 'whole' ? 0 : 1) : stemOf(note, top, bottom);
       // Where the stem ends, in steps: flags of short notes need a longer stem.
       const length = STEM + Math.max(0, (FLAGS[note.type] ?? 0) - 1);
       const written = heads.find((h) => h.written);
@@ -265,7 +273,7 @@
       const items = members.map((i) => notes[i]);
       const distance = (item) => Math.abs(farHead(item.top, item.bottom) - MIDDLE);
       const far = items.reduce((a, b) => (distance(b) > distance(a) ? b : a));
-      const dir = farHead(far.top, far.bottom) >= MIDDLE ? -1 : 1;
+      const dir = rhythm || farHead(far.top, far.bottom) < MIDDLE ? 1 : -1;
       const levels = Math.max(...items.map((item) => FLAGS[item.note.type]));
       const reach = dir === 1 ? Math.max(...items.map((item) => item.top)) : Math.min(...items.map((item) => item.bottom));
       const end = reach + dir * (STEM + (levels - 1) * 1);
@@ -309,14 +317,16 @@
     if (measure.marks) min = Math.max(min, 6 + measure.marks.reduce((sum, mark) => sum + markWidth(mark), 0));
     return {
       ...measure, index, changes, notes, beams, graceBeams, tuplets: tupletGroups(measure.notes), min, prevKey: prev?.key,
-      leftExtra, rightExtra, length, measureRest,
+      leftExtra, rightExtra, length, measureRest, rhythm,
     };
   }
 
   // Width of what goes before a measure's notes: a mid-row clef, key and time change.
   function prefixWidth(info, rowStart) {
     let width = 0;
-    if (rowStart) {
+    if (info.rhythm) {
+      if (rowStart) width += RHYTHM_LEFT;
+    } else if (rowStart) {
       width += CLEF_WIDTH + keySigns(info.key, info.clef, info.changes.key ? info.prevKey : undefined).length * KEY_STEP;
     } else {
       if (info.changes.clef) width += SMALL_CLEF;
@@ -370,6 +380,7 @@
 
   // How far the row's drawing reaches above the top line and below the bottom line, in steps.
   function rowExtent(row) {
+    if (row[0]?.rhythm) return { up: MIDDLE + RHYTHM_UP, down: MIDDLE - RHYTHM_DOWN, noteUp: MIDDLE + RHYTHM_UP };
     let up = TOP_LINE + 2;
     let down = -2;
     for (const info of row) {
@@ -400,8 +411,9 @@
   // and back-to-back repeats share the thick line.
   function drawBarlines(svg, row, k, xStart, x0, x, final, yOf) {
     const info = row[k];
-    const top = yOf(TOP_LINE);
-    const bottom = yOf(0);
+    const top = info.rhythm ? yOf(MIDDLE + 1.5) : yOf(TOP_LINE);
+    const bottom = info.rhythm ? yOf(MIDDLE - 1.5) : yOf(0);
+    if (info.rhythm) final = false;
     const group = (side) => {
       const g = svgEl('g', { class: 'sv-barline', 'data-measure': info.index, 'data-side': side });
       svg.append(g);
@@ -560,6 +572,15 @@
     return TIME_WIDTH;
   }
 
+  // The rhythm staff's time signature: smaller, its numbers above and below the one line.
+  function drawRhythmTime(parent, time, x, yOf) {
+    const cx = x + TIME_WIDTH / 2;
+    const y = yOf(MIDDLE);
+    parent.append(svgEl('text', { x: cx, y: y - 3, class: 'sv-time sv-time-rhythm', 'data-time': `${time[0]}/${time[1]}` }, String(time[0])));
+    parent.append(svgEl('text', { x: cx, y: y + 17, class: 'sv-time sv-time-rhythm' }, String(time[1])));
+    return TIME_WIDTH;
+  }
+
   function drawLedgers(parent, x, pos, yOf, half) {
     const lines = [];
     for (let p = -2; p >= pos; p -= 2) lines.push(p);
@@ -569,10 +590,10 @@
     }
   }
 
-  function drawRest(parent, note, x, yOf) {
+  function drawRest(parent, note, x, yOf, oneLine = false) {
     if (note.type === 'whole' || note.type === 'half') {
-      // Whole rests hang below the fourth line, half rests sit on the middle line.
-      const y = note.type === 'whole' ? yOf(6) : yOf(4) - 5;
+      // Whole rests hang below the fourth line (the rhythm staff: below its line), half rests sit on the middle line.
+      const y = note.type === 'whole' ? yOf(oneLine ? MIDDLE : 6) : yOf(4) - 5;
       parent.append(svgEl('rect', { x: x - 6, y, width: 12, height: 5, class: 'sv-fill sv-rest-block' }));
       return;
     }
@@ -652,7 +673,7 @@
     return { x, y, stem: 1, stemX, end, heads, grace: true };
   }
 
-  function drawNote(parent, item, x, yOf) {
+  function drawNote(parent, item, x, yOf, oneLine = false) {
     const { note, pos, stem, accidental } = item;
     const group = svgEl('g', { class: 'sv-note', 'data-type': note.type });
     parent.append(group);
@@ -663,7 +684,7 @@
     }
     if (note.rest) {
       group.dataset.rest = '';
-      drawRest(group, note, x, yOf);
+      drawRest(group, note, x, yOf, oneLine);
       for (let d = 0; d < (note.dots ?? 0); d++) {
         group.append(svgEl('circle', { cx: x + 10 + d * 6, cy: yOf(MIDDLE + 1), r: 2, class: 'sv-fill sv-dot' }));
       }
@@ -794,8 +815,10 @@
 
   function drawRow(row, r, width, last, short, options) {
     const { up, down, noteUp } = rowExtent(row);
-    const height = ROW_PAD_TOP + (up - down) * HALF + ROW_PAD_BOTTOM;
-    const yOf = (pos) => ROW_PAD_TOP + (up - pos) * HALF;
+    const rhythm = Boolean(row[0]?.rhythm);
+    const padTop = rhythm ? RHYTHM_PAD_TOP : ROW_PAD_TOP;
+    const height = padTop + (up - down) * HALF + ROW_PAD_BOTTOM;
+    const yOf = (pos) => padTop + (up - pos) * HALF;
     const svg = svgEl('svg', { class: 'sheet-svg', viewBox: `0 0 ${width} ${height}`, 'data-row': r });
     const first = row[0];
 
@@ -806,13 +829,19 @@
     // A short last row keeps the measure width of a full row instead of stretching.
     if (short) room *= short;
     // By what each measure holds, so a pickup or a short last measure is drawn shorter.
-    const widths = distribute(Math.max(room, mins.reduce((a, b) => a + b, 0)), mins, row.map((info) => N.toNumber(info.length)));
+    // The rhythm staff: by the time signature, so a measure being written (or still empty) keeps its full width.
+    const widths = distribute(Math.max(room, mins.reduce((a, b) => a + b, 0)), mins,
+      row.map((info) => N.toNumber(rhythm ? N.measureLength(info.time) : info.length)));
     const end = STAFF_LEFT + prefixes.reduce((a, b) => a + b, 0) + widths.reduce((a, b) => a + b, 0);
 
-    for (let line = 0; line <= TOP_LINE; line += 2) {
-      svg.append(svgEl('line', { x1: STAFF_LEFT, x2: end, y1: yOf(line), y2: yOf(line), class: 'sv-line' }));
+    if (rhythm) {
+      svg.append(svgEl('line', { x1: STAFF_LEFT, x2: end, y1: yOf(MIDDLE), y2: yOf(MIDDLE), class: 'sv-line' }));
+    } else {
+      for (let line = 0; line <= TOP_LINE; line += 2) {
+        svg.append(svgEl('line', { x1: STAFF_LEFT, x2: end, y1: yOf(line), y2: yOf(line), class: 'sv-line' }));
+      }
     }
-    if ((r > 0 || options.numberFirst) && first.numbered !== false) {
+    if (!rhythm && (r > 0 || options.numberFirst) && first.numbered !== false) {
       svg.append(svgEl('text', { x: STAFF_LEFT, y: 10, class: 'sv-number' }, String(first.number)));
     }
 
@@ -822,7 +851,11 @@
       const group = svgEl('g', { class: 'sv-measure', 'data-measure': info.index, 'data-number': info.number });
       svg.append(group);
       const xStart = x;
-      if (k === 0) {
+      const mark = options.marks?.[info.index];
+      if (mark === true || mark === false) group.classList.add(mark ? 'is-correct' : 'is-wrong');
+      if (rhythm) {
+        if (k === 0) x += RHYTHM_LEFT;
+      } else if (k === 0) {
         x += drawClef(group, info.clef, x + 2, yOf, false);
         // At a row start a key change shows its cancelling naturals too.
         x += drawSigns(group, keySigns(info.key, info.clef, info.changes.key ? info.prevKey : undefined), x, yOf);
@@ -830,13 +863,16 @@
         if (info.changes.clef) x += drawClef(group, info.clef, x + 2, yOf, true);
         if (info.changes.key) x += drawSigns(group, keySigns(info.key, info.clef, info.prevKey), x, yOf) + 4;
       }
-      if (info.changes.time) x += drawTime(group, info.time, x, yOf, info.timeSymbol);
+      if (info.changes.time) x += rhythm ? drawRhythmTime(group, info.time, x, yOf) : drawTime(group, info.time, x, yOf, info.timeSymbol);
 
       group.dataset.x0 = x;
       group.dataset.x1 = x + widths[k];
       const x0 = x;
+      // The rhythm staff spaces notes by length over the whole measure: what isn't written yet stays empty.
+      const spare = rhythm ? N.toNumber(N.sub(N.measureLength(info.time), info.length)) : 0;
       const sizes = distribute(widths[k] - MEASURE_PAD_LEFT - MEASURE_PAD_RIGHT - info.leftExtra - info.rightExtra,
-        info.notes.map((n) => n.min), info.notes.map((n) => N.toNumber(N.duration(n.note))));
+        [...info.notes.map((n) => n.min), ...(spare > 0 ? [0] : [])],
+        [...info.notes.map((n) => N.toNumber(N.duration(n.note))), ...(spare > 0 ? [spare] : [])]);
       let nx = x + MEASURE_PAD_LEFT + info.leftExtra;
       const middle = (x + MEASURE_PAD_LEFT + info.leftExtra + x + widths[k] - MEASURE_PAD_RIGHT - info.rightExtra) / 2;
       const drawn = info.notes.map((item, i) => {
@@ -845,7 +881,7 @@
         if (options.pick) {
           group.prepend(svgEl('rect', { x: nx, y: 0, width: sizes[i], height, class: 'sv-pick', 'data-measure': info.index, 'data-index': i }));
         }
-        const result = drawNote(group, item, info.measureRest ? middle : nx + item.parts.left + item.parts.head / 2, yOf);
+        const result = drawNote(group, item, info.measureRest ? middle : nx + item.parts.left + item.parts.head / 2, yOf, rhythm);
         const noteGroup = group.lastElementChild;
         noteGroup.dataset.index = i;
         if (info.measureRest) noteGroup.dataset.measureRest = '';
@@ -867,7 +903,11 @@
       // The strip: a highlight behind the chosen measures, and a press area over each whole measure.
       const chosen = options.selected && info.index >= options.selected.start && info.index <= options.selected.end;
       const pending = options.pending === info.index;
-      if (chosen || pending) {
+      if (rhythm && options.current === info.index) {
+        svg.prepend(svgEl('rect', {
+          x: xStart + 2, y: yOf(MIDDLE + 4.5), width: x - xStart - 4, height: 6.25 * HALF, rx: 6, class: 'sv-current', 'data-measure': info.index,
+        }));
+      } else if (chosen || pending) {
         svg.prepend(svgEl('rect', {
           x: xStart + 1, y: yOf(TOP_LINE) - 12, width: x - xStart - 2, height: yOf(0) - yOf(TOP_LINE) + 24, rx: 6,
           class: pending ? 'sv-pending' : 'sv-current', 'data-measure': info.index,
@@ -980,7 +1020,39 @@
     return sheet;
   }
 
+  // The one-line rhythm staff (리듬 모드), drawn as one SVG that scales with its box. Room is kept for `slots`
+  // measures (rows not drawn yet stay empty, so the box doesn't grow while writing); `shown` measures are drawn.
+  // model: { time: [beats, beatType] | null (not chosen yet: no time signature), measures: [[note, ...], ...],
+  //          slots, shown, current (measure being written, or -1), marks (per measure: true / false / undefined) }
+  // wide: up to four measures to a row instead of two. Returns the SVG (class rhythm-staff).
+  function rhythm(model, wide, options = {}) {
+    const width = wide ? WIDTH.wide : WIDTH.narrow;
+    const perRow = !wide || model.slots <= 2 ? 2 : 4;
+    const time = model.time ?? [4, 4];
+    const infos = [];
+    for (let i = 0; i < model.shown; i++) {
+      const measure = { time, key: { fifths: 0, mode: 'major' }, clef: 'treble', hideTime: !model.time, notes: model.measures[i] ?? [] };
+      infos.push(measureInfo(measure, i, i ? infos[i - 1] : null, true, true));
+    }
+    const rows = [];
+    for (let i = 0; i < infos.length; i += perRow) rows.push(infos.slice(i, i + perRow));
+    const reserved = Math.max(rows.length, Math.ceil(model.slots / perRow));
+    const rowHeight = RHYTHM_PAD_TOP + (RHYTHM_UP + RHYTHM_DOWN) * HALF + ROW_PAD_BOTTOM;
+    const svg = svgEl('svg', { class: 'rhythm-staff sheet-rhythm', role: 'img', viewBox: `0 0 ${width} ${reserved * rowHeight}` });
+    if (options.label) svg.setAttribute('aria-label', options.label);
+    rows.forEach((row, r) => {
+      const short = row.length < perRow ? row.length / perRow : 0;
+      const drawn = drawRow(row, r, width, false, short, { marks: model.marks, current: model.current });
+      drawn.svg.setAttribute('x', 0);
+      drawn.svg.setAttribute('y', r * rowHeight);
+      drawn.svg.setAttribute('width', width);
+      drawn.svg.setAttribute('height', drawn.height);
+      svg.append(drawn.svg);
+    });
+    return svg;
+  }
+
   const clefBottom = (clef) => CLEF_INFO[clef].bottom;
 
-  window.Sheet = { draw, strip, shownAccidentals, keySigns, keyAlters, position, drawClef, clefBottom, CLEF_WIDTH };
+  window.Sheet = { draw, strip, rhythm, shownAccidentals, keySigns, keyAlters, position, drawClef, clefBottom, CLEF_WIDTH };
 })();

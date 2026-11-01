@@ -1,16 +1,32 @@
 (function () {
   const SVG_NS = 'http://www.w3.org/2000/svg';
+  const N = Notation;
 
-  // Lengths are in eighth notes. Every time signature is x/4, so a measure is beats * 2 eighths.
+  // The 기본 buttons. Notes are the score format's (v2) notes: { type, dots, pitch } or { type, dots, rest: true },
+  // all at one pitch (the rhythm staff draws them on its line; playback uses TONE).
+  const PITCH = { step: 'C', alter: 0, octave: 5 };
   const TYPES = {
-    w: { length: 8, name: '온음표', short: '온' },
-    'h.': { length: 6, name: '점2분음표', short: '점2분' },
-    h: { length: 4, name: '2분음표', short: '2분' },
-    'q.': { length: 3, name: '점4분음표', short: '점4분' },
-    q: { length: 2, name: '4분음표', short: '4분' },
-    e: { length: 1, name: '8분음표', short: '8분' },
-    r: { length: 2, name: '4분쉼표', short: '4분쉼표', rest: true },
+    w: { type: 'whole', dots: 0, name: '온음표', short: '온' },
+    'h.': { type: 'half', dots: 1, name: '점2분음표', short: '점2분' },
+    h: { type: 'half', dots: 0, name: '2분음표', short: '2분' },
+    'q.': { type: 'quarter', dots: 1, name: '점4분음표', short: '점4분' },
+    q: { type: 'quarter', dots: 0, name: '4분음표', short: '4분' },
+    e: { type: 'eighth', dots: 0, name: '8분음표', short: '8분' },
+    r: { type: 'quarter', dots: 0, name: '4분쉼표', short: '4분쉼표', rest: true },
   };
+
+  // A button code ('q.', 'r', ...) as a note, and back.
+  function noteOf(code) {
+    const { type, dots, rest } = TYPES[code];
+    return rest ? { type, dots, rest: true } : { type, dots, pitch: { ...PITCH } };
+  }
+  function codeOf(note) {
+    return Object.keys(TYPES).find((code) => {
+      const t = TYPES[code];
+      return t.type === note.type && t.dots === (note.dots ?? 0) && Boolean(t.rest) === Boolean(note.rest);
+    });
+  }
+  const QUARTER = N.frac(1, 4);
   const LEVEL_TYPES = {
     easy: ['w', 'h', 'q'],
     medium: ['w', 'h.', 'h', 'q', 'e', 'r'],
@@ -19,14 +35,7 @@
   const TIME_SIGNATURES = [2, 3, 4];
   const MAX_MEASURES = 4;
 
-  // Geometry in viewBox units. Each row is a one-line staff; notes sit on the line with stems up.
-  const ROW_HEIGHT = 64;
-  const LINE_Y = 44;
-  const TOP_PAD = 4;
-  const HEADER = 34; // room for the time signature at the start of the first row
-  const RIGHT_PAD = 6;
-  const MEASURE_PAD_LEFT = 14;
-  const MEASURE_PAD_RIGHT = 10;
+  // Button icons: a note on its own with its stem up.
   const STEM_X = 5.4;
   const STEM_HEIGHT = 28;
 
@@ -47,19 +56,19 @@
     return node;
   }
 
-  function lengthOf(types) {
-    return types.reduce((sum, type) => sum + TYPES[type].length, 0);
-  }
+  // Total length of notes, a fraction of a whole note.
+  const lengthOf = (notes) => N.filled(notes);
+  const timeOf = (beats) => [beats, 4];
 
-  // Splits a flat list of note types into measures of `measureLength` eighths. Input never crosses a
-  // barline (buttons that don't fit are disabled), so a running total is enough.
-  function splitMeasures(types, measureLength) {
+  // Splits a flat list of notes into measures of `measureLength` (a fraction). Input never crosses a barline
+  // (lengths that don't fit are disabled), so a running total is enough.
+  function splitMeasures(notes, measureLength) {
     const measures = [];
-    let filled = 0;
-    for (const type of types) {
-      const index = Math.floor(filled / measureLength);
-      (measures[index] ||= []).push(type);
-      filled += TYPES[type].length;
+    let filled = N.ZERO;
+    for (const note of notes) {
+      const index = Math.floor(N.toNumber(filled) / N.toNumber(measureLength) + 1e-9);
+      (measures[index] ||= []).push(note);
+      filled = N.add(filled, N.duration(note));
     }
     return measures;
   }
@@ -104,76 +113,16 @@
     return group;
   }
 
-  // How the staff is laid out for `slots` measures: two per row in a narrow box, otherwise one row.
-  function layout(slots, wide) {
-    const width = wide ? 640 : 340;
-    const perRow = !wide || slots <= 2 ? 2 : MAX_MEASURES;
-    const rows = Math.ceil(slots / perRow);
-    return {
-      width,
-      perRow,
-      measureWidth: (width - HEADER - RIGHT_PAD) / perRow,
-      height: TOP_PAD + rows * ROW_HEIGHT,
-    };
-  }
-
-  // model: { time (beats per measure, or null before it is chosen), measures: [[type, ...], ...],
+  // model: { time (beats per measure, or null before it is chosen), measures: [[note, ...], ...],
   //          slots (measures to reserve room for), shown (measures to draw), current (measure being filled, or -1),
-  //          marks (per measure: true / false, optional) }, wide: see layout()
-  function renderStaff(svg, model, wide) {
-    const geo = layout(model.slots, wide);
-    svg.setAttribute('viewBox', `0 0 ${geo.width} ${geo.height}`);
-    svg.replaceChildren();
-    const measureLength = model.time ? model.time * 2 : 0;
-
-    for (let i = 0; i < model.shown; i++) {
-      const row = Math.floor(i / geo.perRow);
-      const col = i % geo.perRow;
-      const x0 = HEADER + col * geo.measureWidth;
-      const x1 = x0 + geo.measureWidth;
-      const y = TOP_PAD + row * ROW_HEIGHT + LINE_Y;
-      const mark = model.marks?.[i];
-      const group = svgEl('g', {
-        class: `measure ${mark === true ? 'is-correct' : mark === false ? 'is-wrong' : ''}`.trim(),
-        'data-measure': i,
-      });
-
-      if (i === model.current) {
-        group.append(svgEl('rect', { x: x0 + 2, y: y - 36, width: geo.measureWidth - 4, height: 50, rx: 6, class: 'rhythm-current' }));
-      }
-      // The line runs in from the left edge at the start of each row.
-      group.append(svgEl('line', { x1: col === 0 ? 6 : x0, x2: x1, y1: y, y2: y, class: 'rhythm-line' }));
-      group.append(svgEl('line', { x1, x2: x1, y1: y - 12, y2: y + 12, class: 'rhythm-bar' }));
-      if (i === 0 && model.time) {
-        group.append(svgEl('text', { x: HEADER / 2 + 2, y: y - 3, class: 'rhythm-time' }, String(model.time)));
-        group.append(svgEl('text', { x: HEADER / 2 + 2, y: y + 17, class: 'rhythm-time' }, '4'));
-      }
-
-      const notes = model.measures[i] || [];
-      const unit = measureLength ? (geo.measureWidth - MEASURE_PAD_LEFT - MEASURE_PAD_RIGHT) / measureLength : 0;
-      let position = 0;
-      notes.forEach((type, n) => {
-        const x = x0 + MEASURE_PAD_LEFT + position * unit;
-        // Two eighths that start on a beat are joined by a beam instead of flags.
-        const beamStart = type === 'e' && position % 2 === 0 && notes[n + 1] === 'e';
-        const beamEnd = type === 'e' && position % 2 === 1 && notes[n - 1] === 'e';
-        drawGlyph(group, type, x, y, { flag: !beamStart && !beamEnd });
-        if (beamStart) {
-          const stemX = x + STEM_X;
-          group.append(svgEl('rect', {
-            x: stemX - 0.6, y: y - STEM_HEIGHT, width: unit + 1.2, height: 4.5, class: 'rh-fill rh-beam',
-          }));
-        }
-        position += TYPES[type].length;
-      });
-      svg.append(group);
-    }
+  //          marks (per measure: true / false, optional) }, wide: four measures to a row when there are more than two.
+  function staffOf(model, wide, label) {
+    return Sheet.rhythm({ ...model, time: model.time ? timeOf(model.time) : null }, wide, { label });
   }
 
   function draw(container, rhythm, label, { marks } = {}) {
-    const svg = svgEl('svg', { class: 'rhythm-staff', role: 'img', 'aria-label': label });
     const count = rhythm.measures.length;
-    renderStaff(svg, { time: rhythm.time[0], measures: rhythm.measures, slots: count, shown: count, current: -1, marks }, isWide(container));
+    const svg = staffOf({ time: rhythm.time[0], measures: rhythm.measures, slots: count, shown: count, current: -1, marks }, isWide(container), label);
     container.replaceChildren(svg);
   }
 
@@ -184,8 +133,10 @@
     return svg;
   }
 
-  function beatsText(eighths) {
-    return eighths % 2 === 0 ? String(eighths / 2) : `${(eighths - 1) / 2}.5`;
+  // A length (fraction of a whole note) in quarter-note beats: "1", "1.5".
+  function beatsText(length) {
+    const beats = N.toNumber(length) * 4;
+    return Number.isInteger(beats) ? String(beats) : String(Math.round(beats * 100) / 100);
   }
 
   function create({ container, buttons, timeButtons, progress, undoButton, clearButton, onChange }) {
@@ -197,8 +148,6 @@
     let locked = true;
     let marks = null;
 
-    const svg = svgEl('svg', { class: 'rhythm-staff', role: 'img', 'aria-label': '리듬 보표' });
-    container.replaceChildren(svg);
     let wide = isWide(container);
     // Redrawing changes the box's height, so it waits a frame instead of running inside the observer callback.
     new ResizeObserver(() => {
@@ -227,14 +176,22 @@
     let noteButtons = [];
 
     const maxMeasures = () => fixedMeasures ?? MAX_MEASURES;
-    const measureLength = () => (time ? time * 2 : 0);
-    const filled = () => lengthOf(notes);
-    const isFull = () => Boolean(time) && filled() === measureLength() * maxMeasures();
-    const remaining = () => (!time || isFull() ? 0 : measureLength() - (filled() % measureLength()));
+    const measureLength = () => N.measureLength(timeOf(time));
+    // Measures written so far, as a number (whole measures plus the part of the one being filled).
+    const done = () => (time ? N.toNumber(lengthOf(notes)) / N.toNumber(measureLength()) : 0);
+    const whole = (x) => Math.abs(x - Math.round(x)) < 1e-9;
+    const isFull = () => Boolean(time) && whole(done()) && Math.round(done()) === maxMeasures();
+    // What is left of the measure being filled (a fraction), zero when it can't take more.
+    function remaining() {
+      if (!time || isFull()) return N.ZERO;
+      const before = N.mul(measureLength(), N.frac(Math.floor(done() + 1e-9))); // the finished measures
+      return N.sub(measureLength(), N.sub(lengthOf(notes), before));
+    }
+    const fits = (code) => N.cmp(N.duration(noteOf(code)), remaining()) <= 0;
 
     function canSubmit() {
       if (!time || notes.length === 0) return false;
-      return fixedMeasures ? isFull() : filled() % measureLength() === 0;
+      return fixedMeasures ? isFull() : whole(done());
     }
 
     // Measures on screen: all of them for easy/medium; for hard, the finished ones plus the one being filled
@@ -242,42 +199,39 @@
     function shownMeasures() {
       if (fixedMeasures) return fixedMeasures;
       if (!time) return 1;
-      if (marks) return Math.max(1, Math.ceil(filled() / measureLength()));
-      return Math.min(MAX_MEASURES, Math.floor(filled() / measureLength()) + 1);
+      if (marks) return Math.max(1, Math.ceil(done() - 1e-9));
+      return Math.min(MAX_MEASURES, Math.floor(done() + 1e-9) + 1);
     }
 
     function progressText() {
       if (!time) return '박자표를 고르면 입력할 수 있어요.';
-      if (marks) return `제출한 리듬 · ${Math.ceil(filled() / measureLength())}마디`;
-      const done = filled() / measureLength();
+      if (marks) return `제출한 리듬 · ${Math.ceil(done() - 1e-9)}마디`;
       if (isFull()) return `${maxMeasures()}마디를 모두 채웠어요. 제출해 보세요.`;
-      if (!fixedMeasures && notes.length && Number.isInteger(done)) {
-        return `${done}마디 완성 · 이어서 적거나 제출하세요.`;
+      if (!fixedMeasures && notes.length && whole(done())) {
+        return `${Math.round(done())}마디 완성 · 이어서 적거나 제출하세요.`;
       }
-      return `${Math.floor(done) + 1}마디 · 남은 박 ${beatsText(remaining())}`;
+      return `${Math.floor(done() + 1e-9) + 1}마디 · 남은 박 ${beatsText(remaining())}`;
     }
 
     // The measure being filled is highlighted while input is open.
     function currentMeasure() {
       if (locked || isFull()) return -1;
-      return time ? Math.floor(filled() / measureLength()) : 0;
+      return time ? Math.floor(done() + 1e-9) : 0;
     }
 
     function update() {
-      renderStaff(svg, {
+      const svg = staffOf({
         time,
         measures: time ? splitMeasures(notes, measureLength()) : [],
         slots: maxMeasures(),
         shown: shownMeasures(),
         current: currentMeasure(),
         marks,
-      }, wide);
-      svg.setAttribute('aria-label', time
-        ? `리듬 보표, ${time}/4박자. ${progressText()}`
-        : '리듬 보표. 박자표를 아직 고르지 않았어요.');
+      }, wide, time ? `리듬 보표, ${time}/4박자. ${progressText()}` : '리듬 보표. 박자표를 아직 고르지 않았어요.');
+      container.replaceChildren(svg);
 
       for (const button of noteButtons) {
-        button.disabled = locked || !time || TYPES[button.dataset.type].length > remaining();
+        button.disabled = locked || !time || !fits(button.dataset.type);
       }
       for (const button of timeButtonList) {
         button.disabled = locked;
@@ -288,9 +242,9 @@
       clearButton.disabled = locked || notes.length === 0;
       onChange?.();
     }
-    function add(type) {
-      if (locked || !time || TYPES[type].length > remaining()) return;
-      notes.push(type);
+    function add(code) {
+      if (locked || !time || !fits(code)) return;
+      notes.push(noteOf(code));
       update();
     }
 
@@ -349,14 +303,13 @@
         update();
       },
       canSubmit,
-      // { time, measures: [[type, ...], ...] } — the measures the user finished or started.
+      // { time, measures: [[note, ...], ...] } — the measures the user finished or started.
       getInput: () => ({ time, measures: time ? splitMeasures(notes, measureLength()) : [] }),
     };
   }
 
   // Playback, ♩ = 80. Everything sounds at one pitch; clicks are short and higher.
   const BEAT = 60 / 80;
-  const EIGHTH = BEAT / 2;
   const TONE = 72; // C5
   const CLICK = 84; // C6
   const CLICK_HIGH = 96; // C7: the count-in's first beat (easy/medium)
@@ -366,7 +319,7 @@
   const ACCENT_PEAK = 0.45; // a measure's first beat
   const NOTE_SHARE = 0.9; // a note sounds for this share of its written length
 
-  // rhythm: { time: [beats, 4], measures: [[type, ...], ...] }.
+  // rhythm: { time: [beats, 4], measures: [[note, ...], ...] }.
   // fixedCountIn: true = one measure of count-in with a high first click (the time signature is given);
   // false = four identical clicks that only set the tempo (hard, where the time signature is the question).
   // Returns { events (for Sound.playEvents), total (seconds, including trailing rests), start (when the rhythm begins) }.
@@ -380,21 +333,19 @@
     const start = beats * BEAT;
     let time = start;
     for (const measure of rhythm.measures) {
-      let position = 0;
-      for (const type of measure) {
-        const length = TYPES[type].length * EIGHTH;
-        if (!TYPES[type].rest) {
+      measure.forEach((note, i) => {
+        const length = N.toNumber(N.duration(note)) / N.toNumber(QUARTER) * BEAT;
+        if (!note.rest) {
           events.push({
-            kind: 'note', type, start: time, length: length * NOTE_SHARE, midi: TONE,
-            peak: position === 0 ? ACCENT_PEAK : NOTE_PEAK, sustain: true,
+            kind: 'note', type: codeOf(note), start: time, length: length * NOTE_SHARE, midi: TONE,
+            peak: i === 0 ? ACCENT_PEAK : NOTE_PEAK, sustain: true,
           });
         }
-        position += TYPES[type].length;
         time += length;
-      }
+      });
     }
     return { events, total: time, start };
   }
 
-  window.Rhythm = { create, draw, schedule, iconFor, beatsText, TYPES, LEVEL_TYPES, lengthOf, splitMeasures };
+  window.Rhythm = { create, draw, schedule, iconFor, beatsText, noteOf, codeOf, TYPES, LEVEL_TYPES, lengthOf, splitMeasures };
 })();

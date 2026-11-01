@@ -38,15 +38,15 @@
     const measure = score.time * 2;
     let filled = 0;
     for (const note of score.notes) {
-      const type = note && Rhythm.TYPES[note.type];
+      const type = note && Notation.LEGACY_TYPES[note.type];
       if (!type || typeof note.type !== 'string') return false;
       if (!type.rest) {
         if (!Number.isInteger(note.step) || note.step < 0 || note.step > V1_TOP_STEP) return false;
         if (![-1, 0, 1].includes(note.accidental)) return false;
       }
       const left = measure - (filled % measure);
-      if (type.length > left) return false;
-      filled += type.length;
+      if (type.eighths > left) return false;
+      filled += type.eighths;
     }
     return filled % measure === 0 && filled / measure <= MAX_MEASURES;
   }

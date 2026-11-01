@@ -145,8 +145,12 @@
     },
 
     // Rhythm mode: types like ['q', 'q', 'h'], entered with the note buttons.
-    enterRhythm(types) {
-      for (const type of types) document.querySelector(`#note-buttons .note-button[data-type="${type}"]`).click();
+    // Button codes ('q', 'h.', 'r' …) or notes of the score format (a question's current.measures.flat()).
+    enterRhythm(items) {
+      for (const item of items) {
+        const type = typeof item === 'string' ? item : Rhythm.codeOf(item);
+        document.querySelector(`#note-buttons .note-button[data-type="${type}"]`).click();
+      }
     },
     setTime(beats) {
       document.querySelector(`#time-signatures .time-signature[data-beats="${beats}"]`).click();

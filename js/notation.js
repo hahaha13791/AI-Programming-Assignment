@@ -367,16 +367,17 @@
   }
 
   // ---- the expansion 4 (v1) format, for scores saved before expansion 5 ----
-  // v1 = { id, title, time (beats of x/4), notes: [{ type: Rhythm.TYPES key, step: 0 (C4) .. 11 (G5), accidental }] }.
+  // v1 = { id, title, time (beats of x/4), notes: [{ type: LEGACY_TYPES key, step: 0 (C4) .. 11 (G5), accidental }] }.
   // Scores.open() moves them over; nothing writes v1 any more (the editor works on v2 from expansion 7).
+  // Its lengths are in eighth notes (every v1 time is x/4).
   const LEGACY_TYPES = {
-    w: { type: 'whole', dots: 0 },
-    'h.': { type: 'half', dots: 1 },
-    h: { type: 'half', dots: 0 },
-    'q.': { type: 'quarter', dots: 1 },
-    q: { type: 'quarter', dots: 0 },
-    e: { type: 'eighth', dots: 0 },
-    r: { type: 'quarter', dots: 0, rest: true },
+    w: { type: 'whole', dots: 0, eighths: 8 },
+    'h.': { type: 'half', dots: 1, eighths: 6 },
+    h: { type: 'half', dots: 0, eighths: 4 },
+    'q.': { type: 'quarter', dots: 1, eighths: 3 },
+    q: { type: 'quarter', dots: 0, eighths: 2 },
+    e: { type: 'eighth', dots: 0, eighths: 1 },
+    r: { type: 'quarter', dots: 0, rest: true, eighths: 2 },
   };
   const LEGACY_TEMPO = 80;
 
@@ -392,7 +393,7 @@
         pitch: { step: STEPS[note.step % 7], alter: note.accidental, octave: 4 + Math.floor(note.step / 7) },
       };
       (measures[Math.floor(count / eighths)] ||= { notes: [] }).notes.push(out);
-      count += Rhythm.TYPES[note.type].length;
+      count += info.eighths;
     }
     measures[0] = { time: [legacy.time, 4], key: { fifths: 0, mode: 'major' }, clef: 'treble', tempo: LEGACY_TEMPO, notes: measures[0].notes };
     return { id: legacy.id, title: legacy.title, pickup: false, measures };
@@ -469,7 +470,7 @@
     frac, add, sub, mul, cmp, toNumber, ZERO,
     duration, midi, pitchesOf, lineOf, tieStarts, tieStops, hasChords, measureLength, filled, resolve,
     isValid, clean, excerpt, repeatsOf,
-    fromLegacy,
+    fromLegacy, LEGACY_TYPES,
     parseMeasures, build,
   };
 })();

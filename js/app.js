@@ -786,7 +786,7 @@ function gradeHarmony(input) {
 function gradeRhythm(input) {
   const hard = level === 'hard';
   const timeCorrect = input.time === current.time[0];
-  const same = (a = [], b) => a.length === b.length && a.every((type, i) => type === b[i]);
+  const same = (a = [], b) => a.length === b.length && a.every((note, i) => Rhythm.codeOf(note) === Rhythm.codeOf(b[i]));
   const marks = current.measures.map((measure, i) => timeCorrect && same(input.measures[i], measure));
   return {
     marks,
