@@ -41,6 +41,28 @@ window.RHYTHMS = {
   ],
 };
 
+// 리듬 심화 (PRD #4-J): written as the score format's text (Notation.parseMeasures), n = the one pitch.
+// 임시 샘플 (55~57단계): a few per level; 58단계 puts the real questions here.
+window.RHYTHMS_ADVANCED = {
+  easy: [
+    ['4/4', 'n:8. n:16 n:q n:16 n:16 n:8 n:q | n:h r:8 n:8 n:q'],
+  ],
+  medium: [
+    ['6/8', 'n:q n:8 n:8. n:16 n:8 | n:q.~ n:q.'],
+    ['2/4', '3[ n:8 n:8 n:8 ] n:q | n:q~ n:8 n:8'],
+  ],
+  hard: [
+    ['12/8', 'n:q. n:q n:8 n:8 n:8 n:8 n:8 n:8 n:8 | n:h. n:h.'],
+    ['3/4', 'n:8 n:16 n:16 n:q r:8 n:8 | 3[ n:q n:q n:q ] n:q'],
+  ],
+};
+for (const level of Object.keys(RHYTHMS_ADVANCED)) {
+  RHYTHMS_ADVANCED[level] = RHYTHMS_ADVANCED[level].map(([time, text]) => ({
+    time: time.split('/').map(Number),
+    measures: Notation.parseMeasures(text.replace(/n:/g, 'C5:')).map((measure) => measure.notes),
+  }));
+}
+
 for (const level of Object.keys(RHYTHMS)) {
   RHYTHMS[level] = RHYTHMS[level].map(([time, text]) => ({
     time: time.split('/').map(Number),

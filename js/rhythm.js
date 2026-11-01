@@ -32,7 +32,11 @@
     medium: ['w', 'h.', 'h', 'q', 'e', 'r'],
     hard: ['w', 'h.', 'h', 'q.', 'q', 'e', 'r'],
   };
-  const TIME_SIGNATURES = [2, 3, 4];
+  // Time signatures to choose from (hard): 기본, and 심화 (PRD #4-J-3).
+  const TIME_SIGNATURES = [[2, 4], [3, 4], [4, 4]];
+  const ADVANCED_TIME_SIGNATURES = [[2, 4], [3, 4], [4, 4], [6, 8], [9, 8], [12, 8]];
+  const timeText = (time) => `${time[0]}/${time[1]}`;
+  const sameTime = (a, b) => Boolean(a && b) && a[0] === b[0] && a[1] === b[1];
   const MAX_MEASURES = 4;
 
   // Button icons: a note on its own with its stem up.
@@ -58,7 +62,6 @@
 
   // Total length of notes, a fraction of a whole note.
   const lengthOf = (notes) => N.filled(notes);
-  const timeOf = (beats) => [beats, 4];
 
   // Splits a flat list of notes into measures of `measureLength` (a fraction). Input never crosses a barline
   // (lengths that don't fit are disabled), so a running total is enough.
@@ -113,16 +116,16 @@
     return group;
   }
 
-  // model: { time (beats per measure, or null before it is chosen), measures: [[note, ...], ...],
+  // model: { time ([beats, beatType], or null before it is chosen), measures: [[note, ...], ...],
   //          slots (measures to reserve room for), shown (measures to draw), current (measure being filled, or -1),
   //          marks (per measure: true / false, optional) }, wide: four measures to a row when there are more than two.
   function staffOf(model, wide, label) {
-    return Sheet.rhythm({ ...model, time: model.time ? timeOf(model.time) : null }, wide, { label });
+    return Sheet.rhythm(model, wide, { label });
   }
 
   function draw(container, rhythm, label, { marks } = {}) {
     const count = rhythm.measures.length;
-    const svg = staffOf({ time: rhythm.time[0], measures: rhythm.measures, slots: count, shown: count, current: -1, marks }, isWide(container), label);
+    const svg = staffOf({ time: rhythm.time, measures: rhythm.measures, slots: count, shown: count, current: -1, marks }, isWide(container), label);
     container.replaceChildren(svg);
   }
 
@@ -159,24 +162,28 @@
     const label = document.createElement('span');
     label.className = 'time-signature-label';
     label.textContent = '박자표';
-    const timeButtonList = TIME_SIGNATURES.map((beats) => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'time-signature';
-      button.setAttribute('role', 'radio');
-      button.setAttribute('aria-checked', 'false');
-      button.setAttribute('aria-label', `${beats}/4박자`);
-      button.dataset.beats = beats;
-      button.textContent = `${beats}/4`;
-      button.addEventListener('click', () => setTime(beats));
-      return button;
-    });
-    timeButtons.replaceChildren(label, ...timeButtonList);
+    let timeButtonList = [];
+    function makeTimeButtons(times) {
+      timeButtonList = times.map((t) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'time-signature';
+        button.setAttribute('role', 'radio');
+        button.setAttribute('aria-checked', 'false');
+        button.setAttribute('aria-label', `${timeText(t)}박자`);
+        button.dataset.time = timeText(t);
+        button.textContent = timeText(t);
+        button.addEventListener('click', () => setTime(t));
+        return button;
+      });
+      timeButtons.dataset.count = times.length; // six (심화) take their own row on a phone
+      timeButtons.replaceChildren(label, ...timeButtonList);
+    }
 
     let noteButtons = [];
 
     const maxMeasures = () => fixedMeasures ?? MAX_MEASURES;
-    const measureLength = () => N.measureLength(timeOf(time));
+    const measureLength = () => N.measureLength(time);
     // Measures written so far, as a number (whole measures plus the part of the one being filled).
     const done = () => (time ? N.toNumber(lengthOf(notes)) / N.toNumber(measureLength()) : 0);
     const whole = (x) => Math.abs(x - Math.round(x)) < 1e-9;
@@ -227,7 +234,7 @@
         shown: shownMeasures(),
         current: currentMeasure(),
         marks,
-      }, wide, time ? `리듬 보표, ${time}/4박자. ${progressText()}` : '리듬 보표. 박자표를 아직 고르지 않았어요.');
+      }, wide, time ? `리듬 보표, ${timeText(time)}박자. ${progressText()}` : '리듬 보표. 박자표를 아직 고르지 않았어요.');
       container.replaceChildren(svg);
 
       for (const button of noteButtons) {
@@ -235,7 +242,7 @@
       }
       for (const button of timeButtonList) {
         button.disabled = locked;
-        button.setAttribute('aria-checked', String(Number(button.dataset.beats) === time));
+        button.setAttribute('aria-checked', String(Boolean(time) && button.dataset.time === timeText(time)));
       }
       progress.textContent = progressText();
       undoButton.disabled = locked || notes.length === 0;
@@ -248,9 +255,9 @@
       update();
     }
 
-    function setTime(beats) {
-      if (locked || !chooseTime || beats === time) return;
-      time = beats;
+    function setTime(next) {
+      if (locked || !chooseTime || sameTime(next, time)) return;
+      time = next;
       notes = [];
       update();
     }
@@ -267,7 +274,8 @@
     });
 
     return {
-      // options: { types: note types to offer, time: beats per measure (null: the user picks it), measures: count or null }
+      // options: { types: note types to offer, time: [beats, beatType] (null: the user picks it from `times`),
+      //            measures: count or null, times: time signatures to choose from (default 2/4·3/4·4/4) }
       reset(options) {
         notes = [];
         marks = null;
@@ -275,6 +283,7 @@
         time = options.time ?? null;
         chooseTime = time === null;
         fixedMeasures = options.measures ?? null;
+        makeTimeButtons(options.times ?? TIME_SIGNATURES);
         timeButtons.hidden = !chooseTime;
         noteButtons = types.map((type) => {
           const button = document.createElement('button');
@@ -319,7 +328,7 @@
   const ACCENT_PEAK = 0.45; // a measure's first beat
   const NOTE_SHARE = 0.9; // a note sounds for this share of its written length
 
-  // rhythm: { time: [beats, 4], measures: [[note, ...], ...] }.
+  // rhythm: { time: [beats, beatType], measures: [[note, ...], ...] }.
   // fixedCountIn: true = one measure of count-in with a high first click (the time signature is given);
   // false = four identical clicks that only set the tempo (hard, where the time signature is the question).
   // Returns { events (for Sound.playEvents), total (seconds, including trailing rests), start (when the rhythm begins) }.
@@ -347,5 +356,8 @@
     return { events, total: time, start };
   }
 
-  window.Rhythm = { create, draw, schedule, iconFor, beatsText, noteOf, codeOf, TYPES, LEVEL_TYPES, lengthOf, splitMeasures };
+  window.Rhythm = {
+    create, draw, schedule, iconFor, beatsText, noteOf, codeOf, timeText, sameTime,
+    TYPES, LEVEL_TYPES, TIME_SIGNATURES, ADVANCED_TIME_SIGNATURES, lengthOf, splitMeasures,
+  };
 })();

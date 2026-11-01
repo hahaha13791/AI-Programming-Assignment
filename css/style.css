@@ -1520,6 +1520,22 @@ button:focus-visible {
     height: 3em;
   }
 
+  /* 심화 hard: six time signatures share a row under their label. */
+  .time-signatures[data-count="6"] {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: var(--space-1);
+  }
+
+  .time-signatures[data-count="6"] .time-signature-label {
+    grid-column: 1 / -1;
+  }
+
+  .time-signatures[data-count="6"] .time-signature {
+    padding: 0;
+    font-size: var(--fs-md);
+  }
+
   .note-buttons {
     grid-template-columns: repeat(var(--phone-cols, 4), 1fr);
   }

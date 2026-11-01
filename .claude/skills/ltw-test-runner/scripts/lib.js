@@ -152,8 +152,14 @@
         document.querySelector(`#note-buttons .note-button[data-type="${type}"]`).click();
       }
     },
-    setTime(beats) {
-      document.querySelector(`#time-signatures .time-signature[data-beats="${beats}"]`).click();
+    // A time signature button: beats of x/4 (3), or [6, 8] / '6/8'.
+    setTime(time) {
+      const text = typeof time === 'number' ? `${time}/4` : Array.isArray(time) ? `${time[0]}/${time[1]}` : time;
+      document.querySelector(`#time-signatures .time-signature[data-time="${text}"]`).click();
+    },
+    // 리듬 [기본 | 심화].
+    setRhythmKind(kind) {
+      document.querySelector(`#rhythm-kinds .chord-type[data-kind="${kind}"]`).click();
     },
 
     submit() {

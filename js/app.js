@@ -31,7 +31,10 @@ const MODES = {
   rhythm: {
     subtitle: '박자를 듣고, 리듬을 음표 버튼으로 받아 적어 보세요.',
     // Hard doesn't show its measure count, which would give the time signature away.
-    levels: { easy: '2마디', medium: '+ 8분·쉼표', hard: '+ 점4분' },
+    levels: {
+      basic: { easy: '2마디', medium: '+ 8분·쉼표', hard: '+ 점4분' },
+      advanced: { easy: '+ 16분·점8분', medium: '+ 셋잇단·붙임줄', hard: '+ 9/8·12/8' },
+    },
     tonic: false,
     arpeggio: false,
     hints: {
@@ -55,6 +58,7 @@ const MODES = {
 
 let mode = 'melody';
 let chordType = 'triad'; // harmony mode: 'triad' or 'seventh'
+let rhythmKind = 'basic'; // rhythm mode: 'basic' (기본) or 'advanced' (심화)
 
 function setHint(key) {
   const hints = MODES[mode].hints;
@@ -73,6 +77,7 @@ function setMode(next) {
   $('app').dataset.mode = mode;
   $('subtitle').textContent = info.subtitle;
   $('chord-types').hidden = mode !== 'harmony';
+  $('rhythm-kinds').hidden = mode !== 'rhythm';
   const score = mode === 'score';
   $('difficulty-title').textContent = score ? '악보' : '난이도';
   $('score-picker').hidden = !score;
@@ -97,7 +102,8 @@ function setMode(next) {
 }
 
 function updateLevelDescriptions() {
-  const levels = mode === 'harmony' ? MODES.harmony.levels[chordType] : MODES[mode].levels;
+  const levels = mode === 'harmony' ? MODES.harmony.levels[chordType]
+    : mode === 'rhythm' ? MODES.rhythm.levels[rhythmKind] : MODES[mode].levels;
   for (const option of document.querySelectorAll('.difficulty-option')) {
     option.querySelector('.difficulty-desc').textContent = levels[option.dataset.level];
   }
@@ -105,8 +111,18 @@ function updateLevelDescriptions() {
 
 function setChordType(next) {
   chordType = next;
-  for (const button of document.querySelectorAll('.chord-type')) {
+  for (const button of document.querySelectorAll('#chord-types .chord-type')) {
     button.setAttribute('aria-checked', String(button.dataset.type === chordType));
+  }
+  updateLevelDescriptions();
+  newQuestion();
+}
+
+// 리듬 [기본 | 심화] (PRD #4-J-1): like the chord types, kept while moving between modes.
+function setRhythmKind(next) {
+  rhythmKind = next;
+  for (const button of document.querySelectorAll('#rhythm-kinds .chord-type')) {
+    button.setAttribute('aria-checked', String(button.dataset.kind === rhythmKind));
   }
   updateLevelDescriptions();
   newQuestion();
@@ -616,14 +632,17 @@ function newQuestion() {
     current = chord.notes;
     staff.reset(current.length, { chord: true, topStep: HARMONY_TOP_STEP });
   } else if (mode === 'rhythm') {
-    current = pick(RHYTHMS[level], current);
+    const advanced = rhythmKind === 'advanced';
+    current = pick((advanced ? RHYTHMS_ADVANCED : RHYTHMS)[level], current);
     staff.reset(0);
     // Hard: the time signature and measure count are part of the answer, so neither is shown.
     const hard = level === 'hard';
     rhythm.reset({
-      types: Rhythm.LEVEL_TYPES[level],
-      time: hard ? null : current.time[0],
+      // 심화 has its own buttons from 56단계; until then the 기본 hard ones.
+      types: Rhythm.LEVEL_TYPES[advanced ? 'hard' : level],
+      time: hard ? null : current.time,
       measures: hard ? null : current.measures.length,
+      times: advanced ? Rhythm.ADVANCED_TIME_SIGNATURES : Rhythm.TIME_SIGNATURES,
     });
   } else if (mode === 'score') {
     const practice = practiceSection();
@@ -694,7 +713,7 @@ function renderResult(result) {
       parts.push(element('p', 'extra-measures', `정답은 ${marks.length}마디예요. 넘치게 적은 ${result.extra}마디는 오답이에요.`));
     }
     if (result.timeCorrect !== undefined) {
-      const answerTime = `${current.time[0]}/4`;
+      const answerTime = Rhythm.timeText(current.time);
       parts.push(element('p', `time-result ${result.timeCorrect ? 'is-correct' : 'is-wrong'}`, result.timeCorrect
         ? `박자표 정답 (${answerTime})`
         : `박자표 오답 (정답 ${answerTime})`));
@@ -702,7 +721,7 @@ function renderResult(result) {
     parts.push(element('h3', 'answer-title', '정답 리듬'));
     answerStaff.classList.add('rhythm-area');
     // Only the measures the user got right are coloured; the rest of the answer stays neutral.
-    Rhythm.draw(answerStaff, current, `정답 리듬 보표, ${current.time[0]}/4박자 ${marks.length}마디`, {
+    Rhythm.draw(answerStaff, current, `정답 리듬 보표, ${Rhythm.timeText(current.time)}박자 ${marks.length}마디`, {
       marks: marks.map((mark) => mark || undefined),
     });
     parts.push(answerStaff);
@@ -785,7 +804,7 @@ function gradeHarmony(input) {
 // measures the user wrote beyond it are marked wrong on their staff.
 function gradeRhythm(input) {
   const hard = level === 'hard';
-  const timeCorrect = input.time === current.time[0];
+  const timeCorrect = Rhythm.sameTime(input.time, current.time);
   const same = (a = [], b) => a.length === b.length && a.every((note, i) => Rhythm.codeOf(note) === Rhythm.codeOf(b[i]));
   const marks = current.measures.map((measure, i) => timeCorrect && same(input.measures[i], measure));
   return {
@@ -907,7 +926,12 @@ for (const option of document.querySelectorAll('.difficulty-option')) {
   });
 }
 
-for (const button of document.querySelectorAll('.chord-type')) {
+for (const button of document.querySelectorAll('#rhythm-kinds .chord-type')) {
+  button.addEventListener('click', () => {
+    if (button.dataset.kind !== rhythmKind) setRhythmKind(button.dataset.kind);
+  });
+}
+for (const button of document.querySelectorAll('#chord-types .chord-type')) {
   button.addEventListener('click', () => {
     if (button.dataset.type !== chordType) setChordType(button.dataset.type);
   });

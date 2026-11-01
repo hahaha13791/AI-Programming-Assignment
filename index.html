@@ -27,6 +27,10 @@
           <button type="button" class="chord-type" role="radio" aria-checked="true" data-type="triad">3화음</button>
           <button type="button" class="chord-type" role="radio" aria-checked="false" data-type="seventh">7화음</button>
         </div>
+        <div class="chord-types" role="radiogroup" aria-label="리듬 종류" id="rhythm-kinds" hidden>
+          <button type="button" class="chord-type" role="radio" aria-checked="true" data-kind="basic">기본</button>
+          <button type="button" class="chord-type" role="radio" aria-checked="false" data-kind="advanced">심화</button>
+        </div>
         <p class="score-notice" id="score-notice" role="status" hidden></p>
         <button type="button" class="btn-settings" id="btn-settings" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings" aria-label="설정">⚙&#xFE0E;</button>
         <div class="settings" id="settings" role="dialog" aria-labelledby="settings-title" hidden>
