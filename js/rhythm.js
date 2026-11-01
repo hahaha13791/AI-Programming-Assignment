@@ -49,6 +49,23 @@
   // 9/8 and 12/8 take two measures at most and a phone row each (PRD #4-J-4).
   const isLong = (time) => Boolean(time) && time[1] === 8 && time[0] >= 9;
 
+  // How a measure sounds (PRD #4-J 채점 규칙): where each sound starts, where silence starts, and whether the measure
+  // opens by carrying on a sound tied from the one before. Notes tied inside the measure are one sound; rests in a
+  // row are one silence. Two measures sound the same when these are equal, however they are written
+  // (4분음표 = 8분⌒8분, 6/8의 점4분 = 4분⌒8분). Returns a string to compare.
+  function soundKey(measure = []) {
+    const parts = [];
+    let at = N.ZERO;
+    for (const note of measure) {
+      const state = note.rest ? 'rest' : N.tieStops(note.tie) ? 'cont' : 'on';
+      const last = parts[parts.length - 1];
+      const same = last && (state === 'rest' ? last.state === 'rest' : state === 'cont' && last.state !== 'rest');
+      if (!same) parts.push({ at: `${at[0]}/${at[1]}`, state });
+      at = N.add(at, N.duration(note));
+    }
+    return `${parts.map((p) => `${p.at}:${p.state}`).join(' ')} | ${at[0]}/${at[1]}`;
+  }
+
   // What a note is for comparing as written: length, dot, rest, triplet, tie.
   const noteKey = (note) => [note.type, note.dots ?? 0, note.rest ? 'r' : '', note.tuplet ? note.tuplet.actual : '', note.tie ?? ''].join('/');
   const LEVEL_TYPES = {
@@ -536,7 +553,7 @@
   }
 
   window.Rhythm = {
-    create, draw, schedule, beatOf, isCompound, iconFor, beatsText, noteOf, codeOf, noteKey, timeText, sameTime,
+    create, draw, schedule, beatOf, isCompound, iconFor, beatsText, noteOf, codeOf, noteKey, soundKey, timeText, sameTime,
     TYPES, LENGTHS, LEVEL_TYPES, LEVEL_TOGGLES, TIME_SIGNATURES, ADVANCED_TIME_SIGNATURES, lengthOf, splitMeasures,
   };
 })();

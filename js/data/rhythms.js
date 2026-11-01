@@ -41,19 +41,36 @@ window.RHYTHMS = {
   ],
 };
 
-// 리듬 심화 (PRD #4-J): written as the score format's text (Notation.parseMeasures), n = the one pitch.
-// 임시 샘플 (55~57단계): a few per level; 58단계 puts the real questions here.
+// 리듬 심화 (PRD #4-J): written as the score format's text (Notation.parseMeasures), n = the one pitch;
+// ~ ties into the next note, 3[ ... ] is a triplet. Every question can be written with its level's buttons.
 window.RHYTHMS_ADVANCED = {
+  // 2마디, 2/4·3/4·4/4, 기본의 표기 + 16분음표·점8분음표·8분쉼표 (셋잇단·붙임줄 없음)
   easy: [
     ['4/4', 'n:8. n:16 n:q n:16 n:16 n:8 n:q | n:h r:8 n:8 n:q'],
+    ['2/4', 'n:16 n:16 n:16 n:16 n:q | n:8. n:16 n:q'],
+    ['3/4', 'n:q n:8 n:16 n:16 n:q | n:8. n:16 n:h'],
+    ['4/4', 'r:8 n:8 n:q n:8. n:16 n:8 n:8 | n:16 n:16 n:8 n:q n:h'],
+    ['3/4', 'n:8 n:8 r:8 n:8 n:q | n:16 n:8. n:q r:q'],
+    ['2/4', 'n:q. n:8 | n:16 n:8 n:16 n:q'],
   ],
+  // 2마디, + 셋잇단음표(8분·4분)·붙임줄·6/8
   medium: [
     ['6/8', 'n:q n:8 n:8. n:16 n:8 | n:q.~ n:q.'],
-    ['2/4', '3[ n:8 n:8 n:8 ] n:q | n:q~ n:8 n:8'],
+    ['2/4', '3[ n:8 n:8 n:8 ] n:q~ | n:8 n:8 n:q'],
+    ['4/4', 'n:q 3[ n:8 n:8 n:8 ] n:h | 3[ n:q n:q n:q ] n:h'],
+    ['6/8', 'n:8 n:8 n:8 n:q. | n:8. n:16 n:8 n:q r:8'],
+    ['3/4', 'n:h n:q~ | n:q 3[ n:8 n:8 n:8 ] n:q'],
+    ['6/8', 'n:q. n:8 n:8 n:8~ | n:8 n:8 n:8 n:q.'],
   ],
+  // 3~4마디(9/8·12/8은 2마디), + 9/8·12/8, 박자표도 고름
   hard: [
     ['12/8', 'n:q. n:q n:8 n:8 n:8 n:8 n:8 n:8 n:8 | n:h. n:h.'],
-    ['3/4', 'n:8 n:16 n:16 n:q r:8 n:8 | 3[ n:q n:q n:q ] n:q'],
+    ['9/8', 'n:q. n:8 n:16 n:16 n:8 n:q n:8 | n:h.~ n:q.'],
+    ['3/4', 'n:8. n:16 n:q 3[ n:8 n:8 n:8 ] | n:h n:8 n:8~ | n:q r:8 n:8 n:16 n:16 n:8 | n:h.'],
+    ['2/4', 'n:16 n:16 n:8 n:q | 3[ n:8 r:8 n:8 ] n:q | n:8. n:16 n:8 n:8~ | n:h'],
+    ['6/8', 'n:q. n:8 n:16 n:16 n:8 | n:8 n:q n:q. | n:q. r:q.'],
+    ['4/4', '3[ n:q n:q n:q ] n:8. n:16 n:q | r:q n:8 n:8 n:h~ | n:w'],
+    ['12/8', 'n:8 n:8 n:8 n:q. n:q n:8 n:8 r:8 n:8 | n:w.'],
   ],
 };
 for (const level of Object.keys(RHYTHMS_ADVANCED)) {

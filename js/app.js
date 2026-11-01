@@ -806,7 +806,8 @@ function gradeHarmony(input) {
 function gradeRhythm(input) {
   const hard = level === 'hard';
   const timeCorrect = Rhythm.sameTime(input.time, current.time);
-  const same = (a = [], b) => a.length === b.length && a.every((note, i) => Rhythm.noteKey(note) === Rhythm.noteKey(b[i]));
+  // By sound (PRD #4-J): the same sound written another way is right; the time signature still has to match.
+  const same = (a, b) => Boolean(a) && Rhythm.soundKey(a) === Rhythm.soundKey(b);
   const marks = current.measures.map((measure, i) => timeCorrect && same(input.measures[i], measure));
   return {
     marks,
