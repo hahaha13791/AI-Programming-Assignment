@@ -171,14 +171,14 @@
       preview.setAttribute('aria-label', `${selected + 1}쪽을 펴서 흑백으로 바꾼 미리 보기`);
     }
 
-    function render() {
+    function render(notify = true) {
       renderThumbs();
       left.disabled = selected <= 0;
       right.disabled = selected < 0 || selected >= photos.length - 1;
       remove.disabled = selected < 0;
       renderStage();
       renderPreview();
-      onChange();
+      if (notify) onChange();
     }
 
     // The flat page again after a corner moved.
@@ -251,7 +251,7 @@
     right.addEventListener('click', () => move(1));
     remove.addEventListener('click', removeSelected);
 
-    render();
+    render(false); // the caller isn't ready to hear of changes yet
     return {
       add, clear, select, move, setCorner, reflatten, removeSelected,
       get photos() { return photos; },

@@ -85,7 +85,7 @@
 
   // elements: { title, view, status, undo, redo, tabs, tools: { notes, measure, signs } }. onChange: after any change.
   // titleTaken(title): whether another score already has this title (it isn't saved then, PRD #4-H-1).
-  function create({ title, titleNote, view, status, undo, redo, play, tabs, tools, speed = () => 1, titleTaken = () => false, onChange = () => {} }) {
+  function create({ title, titleNote, view, status, undo, redo, play, tabs, tools, speed = () => 1, titleTaken = () => false, marks = () => undefined, onChange = () => {} }) {
     let state = null;
     let playTimer = null;
 
@@ -530,7 +530,7 @@
     function render() {
       if (!state) return;
       const score = { ...state.score, id: 'edit', title: state.title || '새 악보' };
-      Sheet.draw(view, score, { pick: true, cursor: state.cursor, numberFirst: true, label: `편집 중인 악보, ${score.title}` });
+      Sheet.draw(view, score, { pick: true, cursor: state.cursor, numberFirst: true, marks: marks(), label: `편집 중인 악보, ${score.title}` });
       status.textContent = describe(score, state.cursor);
       status.classList.remove('is-notice');
       undo.disabled = !state.canUndo();

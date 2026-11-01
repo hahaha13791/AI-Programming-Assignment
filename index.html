@@ -154,7 +154,9 @@
       <p class="photos-corner-note" id="photos-corner-note" aria-live="polite"></p>
       <p class="photos-label">펴서 흑백으로</p>
       <canvas class="photos-preview" id="photos-preview" hidden></canvas>
-      <p class="photos-pending" id="photos-pending">인식은 다음 단계(66단계)에서 열려요.</p>
+      <fieldset class="settings-group photos-staves" id="photos-staves" hidden>
+        <legend>읽을 보표</legend>
+      </fieldset>
       <div class="staff-controls photos-actions">
         <button type="button" class="btn" id="photos-cancel">취소</button>
         <button type="button" class="btn btn-primary" id="photos-recognize" disabled>인식</button>
@@ -169,6 +171,18 @@
         <input type="text" id="editor-title" maxlength="100" placeholder="악보 제목" autocomplete="off" aria-describedby="editor-title-note">
       </label>
       <p class="editor-title-note" id="editor-title-note" aria-live="polite"></p>
+      <!-- 악보 인식 (PRD #4-L-5): only for a score read from photos — the original, the measures to check, notices. -->
+      <div class="editor-omr" id="editor-omr" hidden>
+        <p class="editor-omr-notice" id="editor-omr-notice" aria-live="polite"></p>
+        <div class="editor-omr-row">
+          <p class="editor-omr-checks" id="editor-omr-checks" aria-live="polite"></p>
+          <button type="button" class="btn btn-small" id="editor-omr-next">다음 확인</button>
+          <button type="button" class="btn btn-small" id="editor-original-toggle" aria-expanded="false" aria-controls="editor-original">원본 보기</button>
+        </div>
+        <div class="editor-original" id="editor-original" hidden>
+          <canvas id="editor-original-canvas" aria-label="커서가 있는 마디의 원본 사진"></canvas>
+        </div>
+      </div>
       <div class="editor-view" id="editor-view"></div>
       <p class="editor-status" id="editor-status" aria-live="polite"></p>
       <div class="editor-history">
@@ -261,6 +275,8 @@
   <script src="js/score-editor.js"></script>
   <script src="js/omr/image.js"></script>
   <script src="js/omr/photo-import.js"></script>
+  <script src="js/omr/staff.js"></script>
+  <script src="js/omr/build.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

@@ -408,6 +408,12 @@ button:focus-visible {
   cursor: pointer;
 }
 
+.sv-check {
+  fill: var(--missed-soft);
+  stroke: var(--missed);
+  stroke-width: 1.5;
+}
+
 .sv-pending {
   fill: none;
   stroke: var(--accent);
@@ -1298,10 +1304,60 @@ button:focus-visible {
   display: none;
 }
 
-.photos-pending {
-  margin: var(--space-2) 0 0;
-  color: var(--text-muted);
+.photos-staves {
+  margin-top: var(--space-3);
+}
+
+/* A score read from photos, in the editor (PRD #4-L-5): notices, measures to check, the original. */
+.editor-omr {
+  margin: var(--space-2) 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--missed-soft);
+}
+
+.editor-omr p {
+  margin: 0;
   font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
+.editor-omr-notice {
+  min-height: 2.6em;
+  color: var(--text-muted);
+}
+
+.editor-omr-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.editor-omr-checks {
+  flex: 1 1 8rem;
+  min-width: 0;
+  font-weight: 600;
+  color: var(--missed);
+}
+
+.editor-original {
+  margin-top: var(--space-2);
+  overflow-x: auto;
+  background: #fff;
+  border: 1px solid var(--border);
+}
+
+.editor-original[hidden] {
+  display: none;
+}
+
+.editor-original canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
 }
 
 /* 보기 (내 악보, PRD #4-K): the whole score with solfège. */

@@ -201,27 +201,88 @@ const scoreEditor = ScoreEditor.create({
   speed: () => Settings.get('speed'),
   tabs: $('editor-tabs'),
   tools: { notes: $('editor-tool-notes'), measure: $('editor-tool-measure'), signs: $('editor-tool-signs') },
+  marks: () => omrMarks(),
   onChange: () => {
     $('editor-save').disabled = !scoreEditor.canSave();
+    renderOmr();
   },
 });
 
-function openEditor(id) {
+// A score read from photos, while it is in the editor (PRD #4-L-5): { checks: [measure index], notices, origins,
+// pages: [canvas] }. Nothing of it is stored; it goes when the editor closes.
+let omrSession = null;
+
+function omrMarks() {
+  if (!omrSession) return undefined;
+  const marks = {};
+  for (const m of omrSession.checks) marks[m] = 'check';
+  return marks;
+}
+
+function renderOmr() {
+  const box = $('editor-omr');
+  box.hidden = !omrSession;
+  if (!omrSession) return;
+  $('editor-omr-notice').textContent = omrSession.notices.join(' · ');
+  const numbers = omrSession.checks.map((m) => m + 1);
+  $('editor-omr-checks').textContent = numbers.length ? `확인 필요 ${numbers.join('·')}마디` : '확인 필요한 마디가 없어요';
+  $('editor-omr-next').disabled = !numbers.length;
+  const open = $('editor-original-toggle').getAttribute('aria-expanded') === 'true';
+  $('editor-original').hidden = !open;
+  if (open) drawOriginal();
+}
+
+// The cursor's measure as it is on the flat photo: that stretch of its staff.
+function drawOriginal() {
+  const state = scoreEditor.state;
+  if (!omrSession || !state) return;
+  const origin = omrSession.origins[Math.min(state.cursor.measure, omrSession.origins.length - 1)];
+  const canvas = $('editor-original-canvas');
+  if (!origin) return;
+  const page = omrSession.pages[origin.page];
+  const width = Math.round(origin.x1 - origin.x0);
+  const height = Math.round(origin.y1 - origin.y0);
+  canvas.width = Math.max(1, width);
+  canvas.height = Math.max(1, height);
+  canvas.getContext('2d').drawImage(page, origin.x0, origin.y0, width, height, 0, 0, width, height);
+  canvas.dataset.measure = String(state.cursor.measure);
+  canvas.dataset.page = String(origin.page);
+}
+
+$('editor-original-toggle').addEventListener('click', () => {
+  const button = $('editor-original-toggle');
+  button.setAttribute('aria-expanded', String(button.getAttribute('aria-expanded') !== 'true'));
+  renderOmr();
+});
+// [다음 확인]: the cursor to the next measure to check after it (round to the first).
+$('editor-omr-next').addEventListener('click', () => {
+  const state = scoreEditor.state;
+  if (!omrSession || !state || !omrSession.checks.length) return;
+  const next = omrSession.checks.find((m) => m > state.cursor.measure) ?? omrSession.checks[0];
+  state.select(next, 0, 0);
+  scoreEditor.render();
+});
+
+function openEditor(id, draft = null) {
   closePhotos();
   Sound.stop();
   clearTimeout(unlockTimer);
   editingId = id;
   resetDelete();
-  $('editor-heading').textContent = id ? '악보 편집' : '새 악보';
+  $('editor-heading').textContent = id ? '악보 편집' : draft ? '사진에서 읽은 악보' : '새 악보';
   $('editor-delete').hidden = !id;
   $('editor').hidden = false;
   $('app').dataset.editing = '';
-  scoreEditor.open(id ? scores.get(id) : null);
+  if (!draft) omrSession = null;
+  scoreEditor.open(id ? scores.get(id) : draft);
   renderScorePicker();
 }
 
 function closeEditor() {
   editingId = undefined;
+  omrSession = null;
+  $('editor-original-toggle').setAttribute('aria-expanded', 'false');
+  $('editor-omr').hidden = true;
   scoreEditor.close();
   resetDelete();
   $('editor').hidden = true;
@@ -418,6 +479,9 @@ $('import-parts').addEventListener('change', renderImportLines);
 
 // 사진 불러오기 (PRD #4-L-1, #4-L-2): the photo screen takes the place of practice like the editor. Leaving it (취소,
 // another mode, the editor or 보기) drops the photos; they are never stored.
+let omrAnalyses = null; // the photos read last (OmrStaff.analyse per page), kept while the staff is being chosen
+let omrReading = false;
+let omrRun = 0; // closing the screen makes a reading still going on throw its result away
 const photoImport = PhotoImport.create({
   status: $('photos-status'),
   thumbs: $('photos-thumbs'),
@@ -427,6 +491,12 @@ const photoImport = PhotoImport.create({
   stage: $('photos-stage'),
   preview: $('photos-preview'),
   cornerNote: $('photos-corner-note'),
+  onChange: () => {
+    // New, moved or reordered photos are read again from the start.
+    omrAnalyses = null;
+    $('photos-staves').hidden = true;
+    $('photos-recognize').disabled = omrReading || !photoImport.photos.length;
+  },
 });
 const photosOpen = () => !$('photos').hidden;
 
@@ -447,6 +517,9 @@ function importPhotos(files) {
 
 function closePhotos() {
   if (!photosOpen()) return;
+  omrRun++;
+  omrReading = false;
+  omrAnalyses = null;
   photoImport.clear();
   $('photos').hidden = true;
   delete $('app').dataset.photos;
@@ -460,6 +533,62 @@ $('photo-file').addEventListener('change', (event) => {
   if (files.length) importPhotos(files);
 });
 $('photos-cancel').addEventListener('click', closePhotos);
+
+// The staff to read in each system, asked when a system has more than one (PRD #4-L-3).
+function renderStaffChoice(count) {
+  const box = $('photos-staves');
+  box.querySelectorAll('label').forEach((label) => label.remove());
+  for (let i = 0; i < count; i++) {
+    const text = i === 0 ? '1번째 보표 (맨 위)' : i === count - 1 ? `${i + 1}번째 보표 (맨 아래)` : `${i + 1}번째 보표`;
+    box.append(radio('photo-staff', String(i), text, i === 0));
+  }
+  box.hidden = false;
+}
+
+// [인식]: reads the photos, then (a staff chosen if need be) opens the result in the editor, unsaved (PRD #4-L-5).
+// Resolves to true when the editor opened.
+async function recognizePhotos() {
+  if (omrReading || !photoImport.photos.length) return false;
+  const status = $('photos-status');
+  const run = ++omrRun;
+  if (!omrAnalyses) {
+    omrReading = true;
+    $('photos-recognize').disabled = true;
+    const pages = photoImport.photos.map((p) => p.page);
+    const analyses = await OmrBuild.recognize(pages, {
+      onProgress: (done, total) => {
+        status.textContent = `악보를 읽는 중이에요 (${done}/${total}쪽)`;
+        status.classList.remove('is-error');
+      },
+      cancelled: () => run !== omrRun,
+    });
+    if (run !== omrRun || !analyses) return false;
+    omrReading = false;
+    $('photos-recognize').disabled = false;
+    omrAnalyses = analyses;
+    const count = OmrBuild.stavesPerSystem(analyses);
+    if (count > 1) {
+      renderStaffChoice(count);
+      status.textContent = `단마다 보표가 ${count}개예요. 읽을 보표를 고르고 [인식]을 눌러 주세요.`;
+      return false;
+    }
+  }
+  const choice = Number(document.querySelector('#photos-staves input:checked')?.value ?? 0);
+  let result;
+  try {
+    result = OmrBuild.score(omrAnalyses, { staffChoice: choice, title: OmrBuild.titleOf(photoImport.photos[0].name) });
+  } catch (caught) {
+    status.textContent = caught instanceof OmrBuild.OmrError ? caught.message : '악보를 읽지 못했어요.';
+    status.classList.add('is-error');
+    return false;
+  }
+  const pages = photoImport.photos.map((p) => OmrImage.draw(p.page));
+  omrSession = { checks: result.checks, notices: result.notices, origins: result.origins, pages };
+  openEditor(null, result.score);
+  return true;
+}
+
+$('photos-recognize').addEventListener('click', recognizePhotos);
 $('btn-import').addEventListener('click', importChosen);
 // Every score opens in the editor (expansion 7); deleting is the editor's [삭제].
 function updateEditButton() {

@@ -959,6 +959,12 @@
         svg.prepend(svgEl('rect', {
           x: xStart + 2, y: yOf(MIDDLE + 4.5), width: x - xStart - 4, height: 6.25 * HALF, rx: 6, class: 'sv-current', 'data-measure': info.index,
         }));
+      } else if (mark === 'check') {
+        // A measure the photo reading wasn't sure of (PRD #4-L-4): a tinted box behind it, while editing only.
+        svg.prepend(svgEl('rect', {
+          x: xStart + 1, y: yOf(TOP_LINE) - 12, width: x - xStart - 2, height: yOf(0) - yOf(TOP_LINE) + 24, rx: 6,
+          class: 'sv-check', 'data-measure': info.index,
+        }));
       } else if (chosen || pending) {
         svg.prepend(svgEl('rect', {
           x: xStart + 1, y: yOf(TOP_LINE) - 12, width: x - xStart - 2, height: yOf(0) - yOf(TOP_LINE) + 24, rx: 6,

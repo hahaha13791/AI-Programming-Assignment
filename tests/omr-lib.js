@@ -42,7 +42,17 @@ window.OmrTest = (() => {
     Sheet.draw(box, score, { numberFirst: true });
     const svgs = [...box.querySelectorAll('svg')];
     const images = [];
-    for (const svg of svgs) images.push({ img: await imageOf(standalone(svg)), box: svg.viewBox.baseVal });
+    for (const svg of svgs) {
+      // The answer, in the drawing's units: the staff lines' heights and every barline's place and kind.
+      const ys = [...svg.querySelectorAll('.sv-line')].map((l) => Number(l.getAttribute('y1')));
+      const bars = [...svg.querySelectorAll('.sv-barline')].filter((g) => g.children.length).map((g) => {
+        const xs = [...g.querySelectorAll('line, rect')].flatMap((el) => (el.tagName === 'line'
+          ? [Number(el.getAttribute('x1'))]
+          : [Number(el.getAttribute('x')), Number(el.getAttribute('x')) + Number(el.getAttribute('width'))]));
+        return { x: (Math.min(...xs) + Math.max(...xs)) / 2, kind: g.dataset.kind, measure: Number(g.dataset.measure) };
+      });
+      images.push({ img: await imageOf(standalone(svg)), box: svg.viewBox.baseVal, staffTop: Math.min(...ys), staffBottom: Math.max(...ys), bars });
+    }
     box.remove();
     const contentWidth = Math.max(...images.map((i) => i.box.width)) * scale;
     const contentHeight = images.reduce((sum, i) => sum + i.box.height * scale + gap, 0);
@@ -55,11 +65,15 @@ window.OmrTest = (() => {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     let y = pad;
     const rows = [];
-    for (const { img, box: b } of images) {
+    for (const { img, box: b, staffTop, staffBottom, bars } of images) {
       const width = b.width * scale;
       const height = b.height * scale;
       ctx.drawImage(img, pad, y, width, height);
-      rows.push({ top: y, height, width, left: pad });
+      rows.push({
+        top: y, height, width, left: pad,
+        staffTop: y + staffTop * scale, staffBottom: y + staffBottom * scale,
+        bars: bars.map((bar) => ({ ...bar, x: pad + bar.x * scale })),
+      });
       y += height + gap;
     }
     return { canvas, scale, margin: pad, rows };
@@ -76,7 +90,8 @@ window.OmrTest = (() => {
 
   // (나): the page placed with perspective at the corners on a darker, noisy background, with an optional shadow
   // (shadow: how dark the darkest side gets, 0–1) and noise (± brightness). → canvas
-  function paperPhoto(page, { width = 1600, height = 1200, corners, background = 92, shadow = 0, noise = 6, seed = 1 } = {}) {
+  // bend: the paper's middle sags by this many page pixels (a curled page; 0 = flat).
+  function paperPhoto(page, { width = 1600, height = 1200, corners, background = 92, shadow = 0, noise = 6, seed = 1, bend = 0 } = {}) {
     const quad = corners ?? [
       { x: 330, y: 130 }, { x: 1280, y: 170 }, { x: 1330, y: 1110 }, { x: 260, y: 1080 },
     ];
@@ -93,6 +108,7 @@ window.OmrTest = (() => {
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const p = OmrImage.apply(h, x + 0.5, y + 0.5);
+        if (bend) p.y -= bend * Math.sin((Math.PI * p.x) / pw);
         let v;
         if (p.x >= 0 && p.y >= 0 && p.x < pw - 1 && p.y < ph - 1) {
           const x0 = Math.floor(p.x);
@@ -178,5 +194,45 @@ window.OmrTest = (() => {
     return ink / ((x1 - x0) * (y1 - y0));
   }
 
-  return { sheetCanvas, paperPhoto, fileOf, staffTilt, firstLine, lineCoverage, inkShare, random, standalone };
+  // Two staves joined into systems (a piano score): a line joins each system at its left and every barline runs through
+  // both staves. A few filled heads with stems in each measure. → { canvas, systems, measuresPerSystem, staffTops }
+  function grandStaff({ systems = 2, measures = 3, space = 18, width = 1100 } = {}) {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = Math.round(width * 1.3);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#000';
+    ctx.strokeStyle = '#000';
+    const left = 90;
+    const right = width - 80;
+    const staffTops = [];
+    for (let s = 0; s < systems; s++) {
+      const top = 120 + s * space * 20;
+      const tops = [top, top + space * 9];
+      staffTops.push(tops);
+      for (const t of tops) for (let l = 0; l < 5; l++) ctx.fillRect(left, Math.round(t + l * space), right - left, 2);
+      const bottom = tops[1] + space * 4 + 2;
+      ctx.fillRect(left, top, 3, bottom - top); // the system's line at its left
+      for (let m = 1; m <= measures; m++) {
+        const x = Math.round(left + ((right - left) * m) / measures);
+        ctx.fillRect(x - 2, top, 2, bottom - top);
+        // heads: two in each staff of the measure
+        for (const [k, t] of tops.entries()) {
+          for (let n = 0; n < 2; n++) {
+            const hx = left + ((right - left) * (m - 1 + 0.35 + n * 0.3)) / measures;
+            const hy = t + space * (1.5 + ((m + n + k) % 3));
+            ctx.beginPath();
+            ctx.ellipse(hx, hy, space * 0.62, space * 0.45, -0.35, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillRect(hx + space * 0.5, hy - space * 3.3, 2, space * 3.3);
+          }
+        }
+      }
+    }
+    return { canvas, systems, measuresPerSystem: measures, staffTops };
+  }
+
+  return { sheetCanvas, paperPhoto, grandStaff, fileOf, staffTilt, firstLine, lineCoverage, inkShare, random, standalone };
 })();
